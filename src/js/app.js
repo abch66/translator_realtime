@@ -102,8 +102,10 @@ class App {
             this.interviewPanel.refreshGptKeyMask();
 
             // Forward transcript updates so auto-detect can run.
-            this.transcriptUI.onTextUpdate(({ kind, text }) => {
+            this.transcriptUI.onTextUpdate(({ kind, text, language }) => {
                 if (!text) return;
+                // Mirror live transcript into the split-view translator panel.
+                this.interviewPanel.pushSplitTranscript({ kind, text, language });
                 // Only feed finalized originals + translations to the detector;
                 // provisional text changes too rapidly and is debounced upstream.
                 if (kind === 'provisional') return;
@@ -695,6 +697,12 @@ class App {
         if (interviewView) {
             interviewView.classList.toggle('active', view === 'interview');
         }
+        // Leaving the interview view always exits split layout.
+        if (view !== 'interview') {
+            document.body.classList.remove('iv-split-mode');
+        }
+        // Re-evaluate split-mode auto-toggle whenever the active view changes.
+        try { this.interviewPanel?._refreshModePills?.(); } catch { /* ignore */ }
 
         if (view === 'settings') {
             this._populateSettingsForm();

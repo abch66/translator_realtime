@@ -77,8 +77,10 @@ export class InterviewAssistantPanel {
             getSettings: () => interviewSettingsStorage.get(),
             onStatus: (s) => this._setCombinedStatus(s),
             onAnswer: (a) => this._renderCombinedAnswer(a),
+            onPartial: (p) => this._renderCombinedPartial(p),
             onError: (e) => this._renderCombinedError(e),
         });
+        this._lastAutoDetectedFingerprint = null;
 
         interviewSettingsStorage.onChange((s) => this._applySettings(s));
         interviewHistoryService.onChange(() => this._renderHistory());
@@ -112,11 +114,11 @@ export class InterviewAssistantPanel {
         // Combined Mode (GPT API) buttons.
         $('iv-btn-cb-generate')?.addEventListener('click', () => this._combinedGenerate());
         $('iv-btn-cb-regenerate')?.addEventListener('click', () => this._combinedGenerate({ force: true }));
-        $('iv-btn-cb-shorter')?.addEventListener('click', () => this._combinedGenerate({ force: true, style: 'shorter' }));
         $('iv-btn-cb-simpler')?.addEventListener('click', () => this._combinedGenerate({ force: true, style: 'simpler' }));
-        $('iv-btn-cb-copy-short')?.addEventListener('click', () => this._copyValue($('iv-cb-short')?.textContent));
-        $('iv-btn-cb-copy-full')?.addEventListener('click', () => this._copyValue($('iv-cb-full')?.textContent));
+        $('iv-btn-cb-copy')?.addEventListener('click', () => this._copyValue($('iv-cb-answer')?.textContent));
         $('iv-btn-cb-clear')?.addEventListener('click', () => this._combinedClear());
+
+        $('iv-btn-split-toggle')?.addEventListener('click', () => this.toggleSplitView());
 
         // History controls.
         $('iv-history-search')?.addEventListener('input', () => this._renderHistory());
@@ -163,6 +165,36 @@ export class InterviewAssistantPanel {
         const interviewActive = document.getElementById('interview-view')?.classList.contains('active');
         if (!interviewActive && !settings.combinedMode) return;
         this.pipeline.pushTranscript(text);
+    }
+
+    /**
+     * Mirror live translator output into the split-view left column.
+     * Called by the host app on every onTextUpdate from TranscriptUI.
+     */
+    pushSplitTranscript({ kind, text, language } = {}) {
+        if (!text) return;
+        if (kind === 'original' || kind === 'provisional') {
+            const el = $('iv-split-original');
+            if (el) el.textContent = text;
+            if (language) this._setText('iv-split-language', language);
+        } else if (kind === 'translation') {
+            const el = $('iv-split-translation');
+            if (el) el.textContent = text;
+        }
+        const status = $('iv-split-status');
+        if (status) status.textContent = kind === 'provisional' ? 'listening…' : 'live';
+    }
+
+    setSplitView(on) {
+        const cls = 'iv-split-mode';
+        if (on) document.body.classList.add(cls);
+        else document.body.classList.remove(cls);
+        const btn = $('iv-btn-split-toggle');
+        if (btn) btn.textContent = on ? 'Exit Split' : 'Split View';
+    }
+
+    toggleSplitView() {
+        this.setSplitView(!document.body.classList.contains('iv-split-mode'));
     }
 
     setEnabled(enabled) {
@@ -518,6 +550,15 @@ export class InterviewAssistantPanel {
             cbPill.dataset.on = cbOn ? '1' : '0';
             cbPill.innerHTML = `Combined: <b>${cbOn ? 'ON' : 'OFF'}</b>`;
         }
+        // Auto-enable split layout when both Translator and Interview are
+        // active. Auto-disable when either turns off (user can still toggle
+        // manually with the Split View button).
+        const interviewActive = document.getElementById('interview-view')?.classList.contains('active');
+        if (cbOn && interviewActive) {
+            this.setSplitView(true);
+        } else if (!trOn || !ivOn) {
+            this.setSplitView(false);
+        }
     }
 
     _setCombinedStatus(state) {
@@ -544,40 +585,18 @@ export class InterviewAssistantPanel {
 
     _renderCombinedAnswer(answer) {
         if (!answer) return;
-        this._setText('iv-cb-question', answer.detected_question || this._lastCombinedQuestion?.text || '');
-        this._setText('iv-cb-question-vi', answer.question_vi || '—');
-        this._setText('iv-cb-short', answer.short_answer || '');
-        this._setText('iv-cb-full', answer.full_answer || '');
-        this._setText('iv-cb-answer-vi', answer.answer_vi || '');
-        const conf = typeof answer.confidence === 'number' ? answer.confidence.toFixed(2) : '—';
-        this._setText('iv-cb-confidence', String(conf));
-        const ul = $('iv-cb-vocab');
-        if (ul) {
-            ul.innerHTML = '';
-            for (const v of (answer.important_vocabulary || [])) {
-                const li = document.createElement('li');
-                const w = document.createElement('span');
-                w.className = 'iv-vocab-word';
-                w.textContent = v.word;
-                const m = document.createElement('span');
-                m.textContent = v.meaning_vi ? ` — ${v.meaning_vi}` : '';
-                li.appendChild(w);
-                li.appendChild(m);
-                ul.appendChild(li);
-            }
-        }
-        if (!answer.is_interview_question) {
-            this._renderCombinedNotAQuestion(answer);
-        }
+        this._setText('iv-cb-question', answer.question || this._lastCombinedQuestion?.text || '—');
+        const box = $('iv-cb-answer');
+        if (box) box.textContent = answer.answer || '';
+        const err = $('iv-cb-error');
+        if (err) err.style.display = 'none';
     }
 
-    _renderCombinedNotAQuestion(answer) {
-        const reason = answer?.reason || '(model said this is not an interview question)';
-        const err = $('iv-cb-error');
-        if (err) {
-            err.style.display = '';
-            err.textContent = `Model decided this isn't an interview question: ${reason}`;
-        }
+    _renderCombinedPartial(partial) {
+        if (!partial) return;
+        if (partial.question) this._setText('iv-cb-question', partial.question);
+        const box = $('iv-cb-answer');
+        if (box) box.textContent = partial.answer || '';
     }
 
     _renderCombinedError(err) {
@@ -588,7 +607,7 @@ export class InterviewAssistantPanel {
             'missing-key': 'Vui lòng nhập GPT_API_KEY trong Settings để tạo câu trả lời gợi ý.',
             'network': 'Mất mạng — không thể gọi GPT API. Vui lòng kiểm tra kết nối và thử lại.',
             'http': 'Không thể tạo câu trả lời gợi ý. Vui lòng kiểm tra GPT_API_KEY, GPT_BASE_URL hoặc GPT_MODEL.',
-            'parse': 'GPT trả về JSON không hợp lệ. Đã thử lại 1 lần — vui lòng bấm Regenerate.',
+            'parse': 'GPT trả về phản hồi không hợp lệ — vui lòng thử lại hoặc đổi model.',
             'invalid': 'GPT phản hồi không đầy đủ. Vui lòng thử lại.',
         };
         el.style.display = '';
@@ -626,13 +645,13 @@ export class InterviewAssistantPanel {
     }
 
     _combinedClear() {
-        ['iv-cb-short', 'iv-cb-full', 'iv-cb-answer-vi', 'iv-cb-question', 'iv-cb-question-vi', 'iv-cb-confidence']
-            .forEach((id) => this._setText(id, ''));
-        const ul = $('iv-cb-vocab');
-        if (ul) ul.innerHTML = '';
+        this._setText('iv-cb-question', '—');
+        const box = $('iv-cb-answer');
+        if (box) box.textContent = '';
         const err = $('iv-cb-error');
         if (err) err.style.display = 'none';
         this._setCombinedStatus('idle');
         this.combined.clearCache();
+        this._lastAutoDetectedFingerprint = null;
     }
 }

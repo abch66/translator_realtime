@@ -1,62 +1,59 @@
-#!/usr/bin/env node
 /**
- * End-to-end mock test.
- * Mocks localStorage + fetch and exercises the full interview pipeline:
- *   - settings storage round-trip
- *   - history storage CRUD
- *   - question detection pipeline
- *   - duplicate guard
- *   - prompt builder
- *   - combined answer service with mocked HTTP
+ * End-to-end smoke test for the Interview Assistant + Combined Mode pipeline,
+ * using a mocked localStorage + fetch so we can run it under plain Node.
+ *
+ * Verifies:
+ *   - Settings storage round-trip (incl. partial ivContext merge)
+ *   - History storage CRUD
+ *   - Question detection pipeline (debounced)
+ *   - CombinedAnswerService end-to-end:
+ *       * builds plain-text user prompt
+ *       * issues fetch with proper auth + body
+ *       * returns a single concise `answer` (no short_answer)
+ *       * caches identical questions (no second fetch)
+ *       * regenerate forces a fresh call with style hint
+ *       * cancels in-flight request when a fresher question arrives
+ *       * skips when transcript is too short
+ *   - Streaming path (SSE chunks → live partial deltas → final answer)
  */
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
 
-// Mock browser globals used by storage modules.
-const _ls = new Map();
+// Mock localStorage
+const _store = new Map();
 globalThis.localStorage = {
-    getItem: (k) => (_ls.has(k) ? _ls.get(k) : null),
-    setItem: (k, v) => _ls.set(k, String(v)),
-    removeItem: (k) => _ls.delete(k),
-    clear: () => _ls.clear(),
-    key: (i) => Array.from(_ls.keys())[i] || null,
-    get length() { return _ls.size; },
+    getItem: (k) => (_store.has(k) ? _store.get(k) : null),
+    setItem: (k, v) => _store.set(k, String(v)),
+    removeItem: (k) => _store.delete(k),
+    clear: () => _store.clear(),
 };
 
-// Mock fetch — returns a fake OpenAI response.
 let _fetchCallCount = 0;
 let _lastFetchUrl = null;
 let _lastFetchAuth = null;
 let _lastFetchBody = null;
+
+function jsonResponse(content) {
+    return {
+        ok: true,
+        status: 200,
+        async json() { return { choices: [{ message: { content } }] }; },
+        async text() { return JSON.stringify({ choices: [{ message: { content } }] }); },
+    };
+}
+
 globalThis.fetch = async (url, opts) => {
     _fetchCallCount++;
     _lastFetchUrl = url;
     _lastFetchAuth = opts?.headers?.['Authorization'];
     _lastFetchBody = opts?.body ? JSON.parse(opts.body) : null;
-    const json = {
-        is_interview_question: true,
-        detected_question: 'Warum möchten Sie diese Ausbildung machen?',
-        question_vi: 'Tại sao bạn muốn học nghề này?',
-        short_answer: 'Ich interessiere mich für Technik und Maschinen.',
-        full_answer: 'Ich möchte diese Ausbildung machen, weil ich Technik und Maschinen liebe.',
-        answer_vi: 'Tôi muốn học nghề này vì tôi thích máy móc và kỹ thuật.',
-        important_vocabulary: [
-            { word: 'Ausbildung', meaning_vi: 'đào tạo nghề' },
-            { word: 'Maschinen', meaning_vi: 'máy móc' },
-        ],
-        confidence: 0.92,
-    };
-    return {
-        ok: true,
-        status: 200,
-        async json() {
-            return {
-                choices: [{ message: { content: JSON.stringify(json) } }],
-            };
-        },
-        async text() { return JSON.stringify({ choices: [{ message: { content: JSON.stringify(json) } }] }); },
-    };
+    return jsonResponse(
+        'Ich möchte diese Ausbildung machen, weil ich Technik und Maschinen mag. ' +
+        'Ich arbeite gern praktisch und lerne schnell. ' +
+        'Außerdem finde ich es spannend, wie Maschinen funktionieren.',
+    );
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +65,7 @@ const { interviewHistoryStorage } = await importFrom('src/js/storage/interviewHi
 const { QuestionDetectionPipeline } = await importFrom('src/js/services/interview/questionDetector.js');
 const { CombinedAnswerService } = await importFrom('src/js/services/interview/combinedAnswerService.js');
 const { buildInterviewPrompt } = await importFrom('src/js/services/interview/promptBuilder.js');
+const { chatCompletionStream } = await importFrom('src/js/services/interview/gptClient.js');
 
 let pass = 0, fail = 0;
 const ok = (label, cond, extra) => {
@@ -82,9 +80,14 @@ ok('default ivContext.languageLevel', s0.ivContext.languageLevel === 'A2-B1');
 ok('default gptBaseUrl', s0.gptBaseUrl === 'https://api.openai.com/v1');
 ok('default gptModel', s0.gptModel === 'gpt-4o-mini');
 ok('default combinedAutoCall', s0.combinedAutoCall === true);
+ok('default combinedStreaming on', s0.combinedStreaming === true);
+ok('default detectionDebounceMs in 800-1200 range',
+    s0.detectionDebounceMs >= 800 && s0.detectionDebounceMs <= 1200);
+ok('default gptMaxTokens', s0.gptMaxTokens === 600);
 
 interviewSettingsStorage.update({
     gptApiKey: 'sk-test-1234567890',
+    combinedStreaming: false, // tests below use non-streaming mock fetch
     ivContext: { beruf: 'Mechatroniker' },
 });
 const s1 = interviewSettingsStorage.get();
@@ -134,7 +137,7 @@ await new Promise(async (resolve) => {
     }, 200);
 });
 
-console.log('# CombinedAnswerService with mocked fetch');
+console.log('# CombinedAnswerService — non-streaming path');
 _fetchCallCount = 0;
 const cb = new CombinedAnswerService({
     getSettings: () => interviewSettingsStorage.get(),
@@ -146,16 +149,20 @@ const r1 = await cb.generate({
     originalTranscript: 'Warum möchten Sie diese Ausbildung machen?',
     detectedLanguage: 'German',
 });
-ok('combined returned answer object', r1 && r1.is_interview_question === true);
-ok('answer has short_answer', r1.short_answer.includes('Technik'));
-ok('answer has vocab', r1.important_vocabulary.length === 2);
-ok('confidence parsed', r1.confidence === 0.92);
+ok('combined returned answer object', !!r1 && typeof r1.answer === 'string');
+ok('answer is non-empty', r1.answer.length > 20);
+ok('answer NOT split into short/full fields',
+    r1.short_answer === undefined && r1.full_answer === undefined);
+ok('answer has roughly 3-6 sentences',
+    (r1.answer.match(/[.!?]+/g) || []).length >= 2);
 ok('called real chat-completions URL',
     _lastFetchUrl === 'https://api.openai.com/v1/chat/completions',
     _lastFetchUrl);
 ok('called with Bearer token', /^Bearer sk-test/.test(_lastFetchAuth || ''));
 ok('used correct model in body', _lastFetchBody?.model === 'gpt-4o-mini');
-ok('requested JSON response_format', _lastFetchBody?.response_format?.type === 'json_object');
+ok('used max_tokens cap', typeof _lastFetchBody?.max_tokens === 'number'
+    && _lastFetchBody.max_tokens >= 300);
+ok('non-streaming uses no stream flag', !_lastFetchBody?.stream);
 ok('1 fetch call so far', _fetchCallCount === 1);
 
 const r2 = await cb.generate({
@@ -163,19 +170,52 @@ const r2 = await cb.generate({
     detectedLanguage: 'German',
 });
 ok('cached call did not hit the network', _fetchCallCount === 1, `fetchCount=${_fetchCallCount}`);
-ok('cached answer returned', r2.short_answer === r1.short_answer);
+ok('cached answer matches first', r2.answer === r1.answer);
 
 const r3 = await cb.regenerate({
     originalTranscript: 'Warum möchten Sie diese Ausbildung machen?',
     detectedLanguage: 'German',
-    style: 'shorter',
+    style: 'simpler',
 });
 ok('regenerate forces a fresh call', _fetchCallCount === 2);
-ok('regenerate body has shorter style hint',
-    _lastFetchBody?.messages?.some((m) => /Style hint: shorter/.test(m.content || '')));
+ok('regenerate body has simpler style hint',
+    _lastFetchBody?.messages?.some((m) => /A2 vocabulary/.test(m.content || '')));
 
 const r4 = await cb.generate({ originalTranscript: 'short' }); // 1 word, < gptMinWords
 ok('short transcript skipped', r4 === null);
+
+console.log('# Cancel in-flight request when a fresher question arrives');
+{
+    let abortedSeen = false;
+    let resolveSlow;
+    globalThis.fetch = async (url, opts) => {
+        const sig = opts?.signal;
+        return await new Promise((resolve, reject) => {
+            resolveSlow = () => resolve(jsonResponse('Slow answer text answer text answer text.'));
+            if (sig) {
+                sig.addEventListener('abort', () => {
+                    abortedSeen = true;
+                    const err = new Error('aborted');
+                    err.name = 'AbortError';
+                    reject(err);
+                });
+            }
+        });
+    };
+    const cb3 = new CombinedAnswerService({
+        getSettings: () => interviewSettingsStorage.get(),
+        onStatus: () => {}, onAnswer: () => {}, onError: () => {},
+    });
+    const p1 = cb3.generate({ originalTranscript: 'Tell me about your strengths and weaknesses please.' });
+    // While p1 is hanging, fire a second one — it should abort p1.
+    const p2 = cb3.generate({ originalTranscript: 'What are your career goals for the next five years?' });
+    // Resolve the (now cancelled) first request and then the second.
+    setTimeout(() => resolveSlow && resolveSlow(), 30);
+    const [a1, a2] = await Promise.all([p1, p2]);
+    ok('first request was aborted', abortedSeen);
+    ok('first request returned null', a1 === null);
+    ok('second request returned an answer', !!a2 && typeof a2.answer === 'string');
+}
 
 console.log('# Missing key error path');
 interviewSettingsStorage.update({ gptApiKey: '' });
@@ -189,67 +229,46 @@ let missing;
 try { await cb2.generate({ originalTranscript: 'Why do you want this job?' }); } catch (e) { missing = e; }
 ok('missing-key throws GptClientError', missing?.code === 'missing-key');
 
-console.log('# Transport-level fallback when provider returns non-JSON body');
-const { chatCompletionJson } = await importFrom('src/js/services/interview/gptClient.js');
+console.log('# Streaming SSE path');
 {
-    let calls = 0;
-    let firstSentResponseFormat = null;
-    let secondSentResponseFormat = null;
-    globalThis.fetch = async (url, opts) => {
-        calls++;
-        const body = opts?.body ? JSON.parse(opts.body) : null;
-        if (calls === 1) {
-            firstSentResponseFormat = body?.response_format;
-            return {
-                ok: true,
-                status: 200,
-                async text() { return 'I am not JSON, sorry.'; },
-            };
-        }
-        secondSentResponseFormat = body?.response_format;
+    // Build a fake SSE response: emit two chunks, then [DONE].
+    const events = [
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Ich' } }] }) + '\n\n',
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: ' interessiere mich.' } }] }) + '\n\n',
+        'data: [DONE]\n\n',
+    ];
+    const body = Readable.from(events.map((e) => Buffer.from(e)));
+    body.getReader = function getReader() {
+        const it = this[Symbol.asyncIterator]();
         return {
-            ok: true,
-            status: 200,
-            async text() {
-                return JSON.stringify({
-                    choices: [{ message: { content: '{"is_interview_question":false,"reason":"test","confidence":0.1}' } }],
-                });
+            async read() {
+                const r = await it.next();
+                if (r.done) return { value: undefined, done: true };
+                return { value: r.value, done: false };
             },
+            releaseLock() {},
         };
     };
-
-    const out = await chatCompletionJson({
-        baseUrl: 'https://api.test/v1',
-        apiKey: 'sk-test',
-        model: 'm',
-        messages: [{ role: 'user', content: 'hi' }],
-    });
-    ok('1st call had response_format=json_object',
-        firstSentResponseFormat?.type === 'json_object');
-    ok('2nd call dropped response_format', secondSentResponseFormat === undefined);
-    ok('fallback succeeded', out.json.is_interview_question === false);
-    ok('exactly 2 fetch calls', calls === 2);
-}
-
-console.log('# Both attempts fail -> diagnostic message includes body snippet');
-{
     globalThis.fetch = async () => ({
         ok: true,
         status: 200,
-        async text() { return '<html><body>Cloudflare error</body></html>'; },
+        body,
+        async text() { return events.join(''); },
     });
-    let err;
-    try {
-        await chatCompletionJson({
-            baseUrl: 'https://api.test/v1', apiKey: 'sk-test', model: 'm',
-            messages: [{ role: 'user', content: 'hi' }],
-        });
-    } catch (e) { err = e; }
-    ok('throws GptClientError', err?.code === 'parse' || err?.code === 'invalid');
+    const partials = [];
+    const result = await chatCompletionStream({
+        baseUrl: 'https://api.test/v1',
+        apiKey: 'sk-test',
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'hi' }],
+        onDelta: (d, full) => partials.push(full),
+    });
+    ok('streaming aggregated full content', result === 'Ich interessiere mich.');
+    ok('onDelta fired at least once with a partial',
+        partials.length >= 1 && partials[partials.length - 1] === 'Ich interessiere mich.');
 }
 
 console.log('# Prompt builder placeholders');
-const settings = interviewSettingsStorage.get();
 const prompt = buildInterviewPrompt({
     question: 'Why do you want this job?',
     userContext: '5y experience in DevOps',

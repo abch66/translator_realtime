@@ -876,7 +876,28 @@
         </svg>
       </button>
       <span class="iv-title">Interview Assistant — ChatGPT Account Manual Mode</span>
+      <button id="iv-btn-split-toggle" class="iv-btn iv-btn-secondary" title="Toggle 2-column split (Translator + Interview)" style="margin-left:auto;">Split View</button>
     </div>
+
+    <!-- Split-mode mirror of the live translator (only visible in iv-split-mode) -->
+    <aside id="iv-split-translator" class="iv-split-translator">
+      <div class="iv-split-header">
+        <span class="iv-split-title">Translator</span>
+        <span id="iv-split-status" class="iv-status">idle</span>
+      </div>
+      <div class="iv-split-meta">
+        <span class="iv-meta-label">Detected language:</span>
+        <span id="iv-split-language">—</span>
+      </div>
+      <div class="iv-split-section">
+        <div class="iv-meta-label">Original transcript</div>
+        <div id="iv-split-original" class="iv-translation-box iv-split-box"></div>
+      </div>
+      <div class="iv-split-section">
+        <div class="iv-meta-label">Vietnamese translation</div>
+        <div id="iv-split-translation" class="iv-translation-box iv-split-box"></div>
+      </div>
+    </aside>
 
     <div class="iv-disclaimer">
       Interview Assistant Mode được thiết kế để luyện tập phỏng vấn, chuẩn bị câu trả lời, học ngôn ngữ và ghi chú cá nhân.
@@ -963,7 +984,7 @@
       </section>
 
       <!-- H. Combined Mode (GPT API) -->
-      <section class="iv-section">
+      <section class="iv-section iv-section-combined">
         <h3 class="iv-section-title">H. Combined Mode — GPT Suggested Answer</h3>
         <div class="iv-combined-status">
           <span class="iv-pill" id="iv-mode-translator">Translator: <b>OFF</b></span>
@@ -975,39 +996,17 @@
           <span class="iv-meta-label">Detected question:</span>
           <span id="iv-cb-question">—</span>
         </div>
-        <div class="iv-meta-line">
-          <span class="iv-meta-label">Vietnamese question:</span>
-          <span id="iv-cb-question-vi">—</span>
-        </div>
         <div class="iv-cb-answer-grid">
           <div>
-            <div class="iv-meta-label">Short answer</div>
-            <div id="iv-cb-short" class="iv-translation-box"></div>
+            <div class="iv-meta-label">Suggested answer</div>
+            <div id="iv-cb-answer" class="iv-translation-box iv-cb-answer-box"></div>
           </div>
-          <div>
-            <div class="iv-meta-label">Full answer</div>
-            <div id="iv-cb-full" class="iv-translation-box"></div>
-          </div>
-          <div>
-            <div class="iv-meta-label">Vietnamese translation of answer</div>
-            <div id="iv-cb-answer-vi" class="iv-translation-box"></div>
-          </div>
-          <div>
-            <div class="iv-meta-label">Important vocabulary</div>
-            <ul id="iv-cb-vocab" class="iv-vocab-list"></ul>
-          </div>
-        </div>
-        <div class="iv-meta-line">
-          <span class="iv-meta-label">Confidence:</span>
-          <span id="iv-cb-confidence">—</span>
         </div>
         <div class="iv-row">
           <button id="iv-btn-cb-generate" class="iv-btn iv-btn-primary">Generate Answer</button>
           <button id="iv-btn-cb-regenerate" class="iv-btn">Regenerate</button>
-          <button id="iv-btn-cb-shorter" class="iv-btn">Shorter</button>
           <button id="iv-btn-cb-simpler" class="iv-btn">Simpler</button>
-          <button id="iv-btn-cb-copy-short" class="iv-btn">Copy Short</button>
-          <button id="iv-btn-cb-copy-full" class="iv-btn">Copy Full</button>
+          <button id="iv-btn-cb-copy" class="iv-btn">Copy Answer</button>
           <button id="iv-btn-cb-clear" class="iv-btn iv-btn-secondary">Clear</button>
         </div>
         <div id="iv-cb-error" class="iv-error" style="display:none"></div>

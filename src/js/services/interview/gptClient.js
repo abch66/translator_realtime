@@ -67,6 +67,7 @@ export async function chatCompletion({
     messages,
     temperature = 0.4,
     jsonResponse = false,
+    maxTokens,
     signal,
 }) {
     if (!apiKey || !apiKey.trim()) {
@@ -82,6 +83,7 @@ export async function chatCompletion({
         temperature,
     };
     if (jsonResponse) body.response_format = { type: 'json_object' };
+    if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
 
     let res;
     try {
@@ -96,6 +98,7 @@ export async function chatCompletion({
             signal,
         });
     } catch (e) {
+        if (e?.name === 'AbortError' || signal?.aborted) throw e;
         throw new GptClientError('network', 'GPT request failed: ' + e.message, e);
     }
 
@@ -133,6 +136,151 @@ export async function chatCompletion({
         throw new GptClientError('invalid', `No completion content in GPT response. ${apiErr}`);
     }
     return { content, raw: json };
+}
+
+/**
+ * Stream a chat-completion via SSE. Calls `onDelta(text)` for each token
+ * chunk and resolves with the full accumulated content.
+ *
+ * Falls back to non-streaming if the provider returns a non-SSE body.
+ */
+export async function chatCompletionStream({
+    baseUrl,
+    apiKey,
+    model,
+    messages,
+    temperature = 0.4,
+    maxTokens,
+    signal,
+    onDelta,
+}) {
+    if (!apiKey || !apiKey.trim()) {
+        throw new GptClientError('missing-key', 'GPT_API_KEY is missing');
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+        throw new GptClientError('invalid', 'messages must be a non-empty array');
+    }
+    const url = String(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/chat/completions';
+    const body = {
+        model: model || 'gpt-4o-mini',
+        messages,
+        temperature,
+        stream: true,
+    };
+    if (typeof maxTokens === 'number' && maxTokens > 0) body.max_tokens = maxTokens;
+
+    let res;
+    try {
+        res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify(body),
+            signal,
+        });
+    } catch (e) {
+        if (e?.name === 'AbortError' || signal?.aborted) throw e;
+        throw new GptClientError('network', 'GPT request failed: ' + e.message, e);
+    }
+    if (!res.ok) {
+        let detail = '';
+        try { detail = await res.text(); } catch { /* ignore */ }
+        throw new GptClientError('http', `GPT API HTTP ${res.status}${detail ? ': ' + detail.slice(0, 400) : ''}`);
+    }
+
+    // If the provider didn't actually stream, fall through to text mode.
+    if (!res.body || typeof res.body.getReader !== 'function') {
+        const text = await res.text();
+        return _extractContentFromMaybeSseOrJson(text, onDelta);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let full = '';
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            // SSE events are separated by blank lines (\n\n).
+            let idx;
+            while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                const event = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                const delta = _parseSseEvent(event);
+                if (delta === '__DONE__') return full;
+                if (delta) {
+                    full += delta;
+                    if (onDelta) try { onDelta(delta, full); } catch { /* ignore */ }
+                }
+            }
+        }
+        // Drain any trailing event.
+        const tail = buffer.trim();
+        if (tail) {
+            const delta = _parseSseEvent(tail);
+            if (delta && delta !== '__DONE__') {
+                full += delta;
+                if (onDelta) try { onDelta(delta, full); } catch { /* ignore */ }
+            }
+        }
+    } finally {
+        try { reader.releaseLock(); } catch { /* ignore */ }
+    }
+    return full;
+}
+
+function _parseSseEvent(event) {
+    // event is one or more lines like "data: {...}" / "data: [DONE]".
+    const lines = event.split('\n');
+    let payload = '';
+    for (const line of lines) {
+        if (line.startsWith('data:')) payload += line.slice(5).trim();
+    }
+    if (!payload) return '';
+    if (payload === '[DONE]') return '__DONE__';
+    try {
+        const j = JSON.parse(payload);
+        return j?.choices?.[0]?.delta?.content || '';
+    } catch {
+        return '';
+    }
+}
+
+function _extractContentFromMaybeSseOrJson(text, onDelta) {
+    // Provider returned the whole body as one chunk; try SSE-style first,
+    // then fall back to a plain chat-completion JSON object.
+    const events = text.split('\n\n').filter(Boolean);
+    let full = '';
+    let sawSse = false;
+    for (const ev of events) {
+        if (ev.startsWith('data:')) {
+            sawSse = true;
+            const d = _parseSseEvent(ev);
+            if (d === '__DONE__') break;
+            if (d) {
+                full += d;
+                if (onDelta) try { onDelta(d, full); } catch { /* ignore */ }
+            }
+        }
+    }
+    if (sawSse) return full;
+    try {
+        const j = JSON.parse(text);
+        const c = j?.choices?.[0]?.message?.content || '';
+        if (c && onDelta) try { onDelta(c, c); } catch { /* ignore */ }
+        return c;
+    } catch (e) {
+        throw new GptClientError(
+            'parse',
+            `GPT API returned non-JSON, non-SSE response. First 400 chars:\n${text.slice(0, 400)}`,
+            e,
+        );
+    }
 }
 
 /**

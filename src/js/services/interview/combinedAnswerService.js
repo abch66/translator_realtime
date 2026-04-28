@@ -3,8 +3,8 @@
  *
  * When BOTH the Translator and the Interview Assistant are active, each
  * detected question is fed to GPT (via the OpenAI-compatible REST API) and
- * the resulting JSON answer (short / full / VI translation / vocabulary /
- * confidence) is rendered in the Interview Assistant view.
+ * a single concise answer (3-6 sentences) is streamed back into the
+ * Interview Assistant view.
  *
  * Anti-spam guarantees:
  *   - Caches the last N (~10) question fingerprints + their answers
@@ -13,80 +13,17 @@
  *   - Aborts in-flight requests when a fresher question arrives
  */
 
-import { chatCompletionJson, GptClientError } from './gptClient.js';
+import { chatCompletionStream, chatCompletion, GptClientError } from './gptClient.js';
 import { fingerprint } from '../../utils/hashUtils.js';
 import { isSimilar, normalizeText } from '../../utils/textSimilarity.js';
 
-const SYSTEM_PROMPT = `You are an interview assistant for Ausbildung interviews in Germany.
-The user is a Vietnamese learner of German.
-Your task is to analyze real-time transcription and create a helpful interview answer suggestion.
+const SYSTEM_PROMPT =
+    'You are an interview assistant. Answer the interviewer\'s question with one natural answer only. ' +
+    'Do not include short answers. Do not give multiple options. ' +
+    'Keep the answer concise and sufficient, around 3-6 sentences depending on question complexity. ' +
+    'Use simple German A2-B1 if the question is in German.';
 
-Rules:
-- Use simple and natural language.
-- Default language level is A2-B1.
-- Use short sentences and clear grammar.
-- Do not invent fake experience.
-- If information is missing, give a general but realistic answer.
-- Always include a Vietnamese translation.
-- Return only valid JSON.
-- Do not include markdown.`;
-
-function buildUserPrompt({
-    originalTranscript,
-    vietnameseTranslation,
-    detectedLanguage,
-    targetLanguage,
-    languageLevel,
-    beruf,
-    companyName,
-    userBackground,
-    strengths,
-    workExperience,
-    style = 'natural',
-}) {
-    return [
-        'Original transcript:',
-        originalTranscript || '(empty)',
-        '',
-        'Vietnamese translation:',
-        vietnameseTranslation || '(none — translate yourself if needed)',
-        '',
-        'Detected language:',
-        detectedLanguage || 'unknown',
-        '',
-        'Interview context:',
-        `- Target language: ${targetLanguage || 'Deutsch'}`,
-        `- Language level: ${languageLevel || 'A2-B1'}`,
-        `- Ausbildung/Beruf: ${beruf || ''}`,
-        `- Company: ${companyName || ''}`,
-        `- User background: ${userBackground || ''}`,
-        `- Strengths: ${strengths || ''}`,
-        `- Work experience: ${workExperience || ''}`,
-        `- Style hint: ${style}`,
-        '',
-        'Task:',
-        '1. Decide if this is an interview question.',
-        '2. If yes, create a short suggested answer (1-2 sentences).',
-        '3. Create a fuller suggested answer (3-5 sentences).',
-        '4. Translate the answer into Vietnamese.',
-        '5. Extract important vocabulary (max 8 items, each with Vietnamese meaning).',
-        '6. Return JSON only with this exact shape:',
-        '{',
-        '  "is_interview_question": boolean,',
-        '  "detected_question": string,',
-        '  "question_vi": string,',
-        '  "short_answer": string,',
-        '  "full_answer": string,',
-        '  "answer_vi": string,',
-        '  "important_vocabulary": [{ "word": string, "meaning_vi": string }],',
-        '  "confidence": number',
-        '}',
-        'If it is NOT an interview question, return:',
-        '{ "is_interview_question": false, "reason": string, "confidence": number }',
-    ].join('\n');
-}
-
-const ALLOWED_STYLES = new Set(['natural', 'shorter', 'simpler']);
+const ALLOWED_STYLES = new Set(['natural', 'simpler']);
 
 export class CombinedAnswerService {
     constructor({
@@ -94,6 +31,7 @@ export class CombinedAnswerService {
         cacheSize = 10,
         onStatus,
         onAnswer,
+        onPartial,
         onError,
     } = {}) {
         if (typeof getSettings !== 'function') {
@@ -103,6 +41,7 @@ export class CombinedAnswerService {
         this.cacheSize = cacheSize;
         this.onStatus = onStatus || (() => {});
         this.onAnswer = onAnswer || (() => {});
+        this.onPartial = onPartial || (() => {});
         this.onError = onError || (() => {});
         this._cache = []; // [{ fp, normalized, answer }]
         this._inflight = null; // { controller, key }
@@ -157,40 +96,45 @@ export class CombinedAnswerService {
         }
 
         const styleHint = ALLOWED_STYLES.has(style) ? style : 'natural';
-        const ctx = settings.ivContext || {};
+        const userPrompt = buildUserPrompt({ question, detectedLanguage, vietnameseTranslation, style: styleHint });
         const messages = [
             { role: 'system', content: SYSTEM_PROMPT },
-            {
-                role: 'user',
-                content: buildUserPrompt({
-                    originalTranscript: question,
-                    vietnameseTranslation,
-                    detectedLanguage,
-                    targetLanguage: ctx.targetLanguage,
-                    languageLevel: ctx.languageLevel,
-                    beruf: ctx.beruf,
-                    companyName: ctx.companyName,
-                    userBackground: ctx.userBackground,
-                    strengths: ctx.strengths,
-                    workExperience: ctx.workExperience,
-                    style: styleHint,
-                }),
-            },
+            { role: 'user', content: userPrompt },
         ];
 
         const controller = new AbortController();
         this._inflight = { controller, key: fp };
         this.onStatus('loading');
-        let result;
+
+        const maxTokens = Math.max(120, Number(settings.gptMaxTokens) || 600);
+        const useStreaming = settings.combinedStreaming !== false; // default ON
+        let answerText = '';
         try {
-            result = await chatCompletionJson({
-                baseUrl: settings.gptBaseUrl,
-                apiKey,
-                model: settings.gptModel,
-                messages,
-                temperature: styleHint === 'natural' ? 0.4 : 0.6,
-                signal: controller.signal,
-            });
+            if (useStreaming) {
+                answerText = await chatCompletionStream({
+                    baseUrl: settings.gptBaseUrl,
+                    apiKey,
+                    model: settings.gptModel,
+                    messages,
+                    temperature: styleHint === 'simpler' ? 0.55 : 0.35,
+                    maxTokens,
+                    signal: controller.signal,
+                    onDelta: (_delta, full) => {
+                        try { this.onPartial({ answer: full, question, fromCache: false }); } catch { /* ignore */ }
+                    },
+                });
+            } else {
+                const r = await chatCompletion({
+                    baseUrl: settings.gptBaseUrl,
+                    apiKey,
+                    model: settings.gptModel,
+                    messages,
+                    temperature: styleHint === 'simpler' ? 0.55 : 0.35,
+                    maxTokens,
+                    signal: controller.signal,
+                });
+                answerText = r.content;
+            }
         } catch (e) {
             if (e?.name === 'AbortError') {
                 this.onStatus('aborted');
@@ -205,18 +149,26 @@ export class CombinedAnswerService {
             }
         }
 
-        const answer = this._normalizeAnswer(result.json, question);
+        const cleaned = cleanAnswer(answerText);
+        const answer = {
+            question,
+            answer: cleaned,
+            language: detectedLanguage || '',
+            createdAt: Date.now(),
+            fromCache: false,
+        };
         this._cachePut(fp, norm, answer);
         this.lastQuestion = question;
         this.lastResult = answer;
         this.onAnswer(answer);
-        this.onStatus(answer.is_interview_question ? 'answer' : 'not-question');
+        this.onStatus('answer');
         return answer;
     }
 
     /**
      * Hook into the QuestionDetectionPipeline. Called once per debounced,
-     * deduped question detection.
+     * deduped question detection. Auto-cancels any in-flight request and
+     * starts a new one for the freshest question.
      */
     async onDetectedQuestion({ text, language, vietnameseTranslation }) {
         const settings = this.getSettings();
@@ -232,7 +184,7 @@ export class CombinedAnswerService {
                 detectedLanguage: language,
                 style: 'natural',
             });
-        } catch (e) {
+        } catch {
             // generate() already invoked onError + onStatus.
             return null;
         }
@@ -249,26 +201,6 @@ export class CombinedAnswerService {
         this.lastResult = null;
     }
 
-    _normalizeAnswer(json, originalQuestion) {
-        const out = {
-            is_interview_question: !!json?.is_interview_question,
-            detected_question: typeof json?.detected_question === 'string' ? json.detected_question : originalQuestion,
-            question_vi: typeof json?.question_vi === 'string' ? json.question_vi : '',
-            short_answer: typeof json?.short_answer === 'string' ? json.short_answer : '',
-            full_answer: typeof json?.full_answer === 'string' ? json.full_answer : '',
-            answer_vi: typeof json?.answer_vi === 'string' ? json.answer_vi : '',
-            important_vocabulary: Array.isArray(json?.important_vocabulary)
-                ? json.important_vocabulary
-                    .filter((v) => v && typeof v === 'object')
-                    .map((v) => ({ word: String(v.word || ''), meaning_vi: String(v.meaning_vi || '') }))
-                    .filter((v) => v.word)
-                : [],
-            confidence: typeof json?.confidence === 'number' ? json.confidence : 0,
-            reason: typeof json?.reason === 'string' ? json.reason : '',
-        };
-        return out;
-    }
-
     _cacheLookup(fp, norm, threshold) {
         for (const entry of this._cache) {
             if (entry.fp === fp) return entry;
@@ -281,4 +213,29 @@ export class CombinedAnswerService {
         this._cache.unshift({ fp, normalized: norm, answer });
         while (this._cache.length > this.cacheSize) this._cache.pop();
     }
+}
+
+function buildUserPrompt({ question, detectedLanguage, vietnameseTranslation, style }) {
+    const lines = [];
+    lines.push(`Question: ${question}`);
+    if (detectedLanguage) lines.push(`Detected language: ${detectedLanguage}`);
+    if (vietnameseTranslation) lines.push(`Vietnamese translation of question: ${vietnameseTranslation}`);
+    if (style === 'simpler') lines.push('Style hint: use the simplest possible language (A2 vocabulary).');
+    lines.push(
+        'Reply with ONLY the answer text — no preamble, no labels, no markdown, no JSON. ' +
+        '3-6 sentences total.',
+    );
+    return lines.join('\n');
+}
+
+function cleanAnswer(raw) {
+    if (!raw) return '';
+    let text = String(raw).trim();
+    // Strip stray markdown code fences.
+    if (text.startsWith('```')) {
+        text = text.replace(/^```[a-zA-Z]*\s*/, '').replace(/\s*```\s*$/, '');
+    }
+    // Strip a leading "Answer:" / "Antwort:" / "Trả lời:" label if the model added one.
+    text = text.replace(/^(Answer|Antwort|Trả lời|Suggested answer)\s*:\s*/i, '');
+    return text.trim();
 }

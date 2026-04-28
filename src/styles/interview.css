@@ -351,3 +351,93 @@
 @media (max-width: 600px) {
     .iv-grid { grid-template-columns: 1fr; }
 }
+
+/* =========================================================================
+ * Split-view (2-column layout) — shown when both Translator and Interview
+ * are active and the user enables split mode.
+ * Left column = live translator mirror (#iv-split-translator)
+ * Right column = the existing interview body, trimmed to Section H only.
+ * ========================================================================= */
+
+.iv-split-translator {
+    display: none;
+}
+
+.iv-cb-answer-box {
+    min-height: 96px;
+    white-space: pre-wrap;
+}
+
+body.iv-split-mode #interview-view {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    align-content: flex-start;
+}
+
+body.iv-split-mode #interview-view .iv-header {
+    flex: 0 0 100%;
+    width: 100%;
+}
+
+body.iv-split-mode #interview-view .iv-disclaimer {
+    flex: 0 0 100%;
+    width: 100%;
+}
+
+body.iv-split-mode #interview-view .iv-split-translator {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 50%;
+    width: 50%;
+    max-width: 50%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    overflow-y: auto;
+    height: calc(100vh - 96px);
+    background: rgba(0, 0, 0, 0.15);
+}
+
+body.iv-split-mode #interview-view .iv-body {
+    flex: 1 1 50%;
+    width: 50%;
+    max-width: 50%;
+    box-sizing: border-box;
+    overflow-y: auto;
+    height: calc(100vh - 96px);
+}
+
+body.iv-split-mode #interview-view .iv-section:not(.iv-section-combined) {
+    display: none !important;
+}
+
+.iv-split-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.iv-split-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.iv-split-section {
+    margin-top: 12px;
+}
+
+.iv-split-meta {
+    margin-bottom: 6px;
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+.iv-split-box {
+    min-height: 80px;
+    max-height: 36vh;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.45;
+}

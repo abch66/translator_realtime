@@ -15,7 +15,7 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     autoDetectQuestion: true,
     autoGenerateAnswer: false, // we use ChatGPT Account Manual Mode
     combinedMode: true, // detect questions while the translator is running
-    detectionDebounceMs: 2000, // 2s as per spec
+    detectionDebounceMs: 1000, // 800-1200ms — fast generate window
     duplicateThreshold: 0.85,
     minQuestionLength: 10,
 
@@ -40,8 +40,9 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     gptBaseUrl: 'https://api.openai.com/v1',
     gptModel: 'gpt-4o-mini',
     gptMinWords: 5,
+    gptMaxTokens: 600, // cap output ~3-6 sentences
     combinedAutoCall: true, // call GPT automatically when a question is detected
-    combinedStreaming: false, // optional streaming response (when supported)
+    combinedStreaming: true, // stream tokens to render answer as it arrives
 
     // Interview-context defaults aligned with the Ausbildung use-case from the spec.
     ivContext: {
