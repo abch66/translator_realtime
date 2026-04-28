@@ -15,7 +15,7 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     autoDetectQuestion: true,
     autoGenerateAnswer: false, // we use ChatGPT Account Manual Mode
     combinedMode: true, // detect questions while the translator is running
-    detectionDebounceMs: 1000, // 800-1200ms — fast generate window
+    detectionDebounceMs: 800, // 600-1000ms — fast generate window
     duplicateThreshold: 0.85,
     minQuestionLength: 10,
 
@@ -40,7 +40,7 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     gptBaseUrl: 'https://api.openai.com/v1',
     gptModel: 'gpt-4o-mini',
     gptMinWords: 5,
-    gptMaxTokens: 600, // cap output ~3-6 sentences
+    gptMaxTokens: 320, // cap output ~3-6 sentences (180-320 fits A2-B1 German)
     combinedAutoCall: true, // call GPT automatically when a question is detected
     combinedStreaming: true, // stream tokens to render answer as it arrives
 

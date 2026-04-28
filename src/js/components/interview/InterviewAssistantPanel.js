@@ -628,7 +628,18 @@ export class InterviewAssistantPanel {
         if (!partial) return;
         if (partial.question) this._setText('iv-cb-question', partial.question);
         const box = $('iv-cb-answer');
-        if (box) box.textContent = partial.answer || '';
+        if (box) {
+            box.textContent = partial.answer || '';
+            delete box.dataset.placeholder;
+        }
+        // Live progress in the status pill so the user can see streaming
+        // is actually working (or stalled).
+        const status = $('iv-gpt-status');
+        if (status) {
+            const n = (partial.answer || '').length;
+            status.textContent = `Streaming… ${n} chars`;
+            status.dataset.state = 'loading';
+        }
     }
 
     _renderCombinedError(err) {
@@ -662,6 +673,14 @@ export class InterviewAssistantPanel {
             this._toast('No question to answer yet.');
             return;
         }
+        // Visually clear the previous answer + error before streaming starts
+        // so the user immediately knows a fresh generation is in flight.
+        const box = $('iv-cb-answer');
+        if (box) box.textContent = '';
+        const err = $('iv-cb-error');
+        if (err) err.style.display = 'none';
+        this._setCombinedStatus('loading');
+
         const lang = detectLanguage(question);
         try {
             await this.combined.generate({

@@ -93,9 +93,11 @@ export async function chatCompletion({
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
                 'Accept': 'application/json',
+                'Connection': 'keep-alive',
             },
             body: JSON.stringify(body),
             signal,
+            keepalive: true,
         });
     } catch (e) {
         if (e?.name === 'AbortError' || signal?.aborted) throw e;
@@ -177,9 +179,11 @@ export async function chatCompletionStream({
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
                 'Accept': 'text/event-stream',
+                'Connection': 'keep-alive',
             },
             body: JSON.stringify(body),
             signal,
+            keepalive: true,
         });
     } catch (e) {
         if (e?.name === 'AbortError' || signal?.aborted) throw e;

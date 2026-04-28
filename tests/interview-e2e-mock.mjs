@@ -83,7 +83,7 @@ ok('default combinedAutoCall', s0.combinedAutoCall === true);
 ok('default combinedStreaming on', s0.combinedStreaming === true);
 ok('default detectionDebounceMs in 800-1200 range',
     s0.detectionDebounceMs >= 800 && s0.detectionDebounceMs <= 1200);
-ok('default gptMaxTokens', s0.gptMaxTokens === 600);
+ok('default gptMaxTokens', s0.gptMaxTokens === 320);
 
 interviewSettingsStorage.update({
     gptApiKey: 'sk-test-1234567890',
