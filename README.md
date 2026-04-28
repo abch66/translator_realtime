@@ -14,6 +14,8 @@ Everything that worked in `my-translator` still works here:
 - Sessions list, transcript saving, Settings tab structure, auto-updater plumbing
 - macOS Apple-Silicon-only Local MLX mode
 
+> **Important note about ChatGPT / GPT.** This app uses the GPT API via your own API key (OpenAI or any OpenAI-compatible provider). It does **not** use a ChatGPT account, ChatGPT webview, browser cookies, or DOM automation. The optional Manual Mode opens `chatgpt.com` in your normal browser; the optional Combined Mode calls `${GPT_BASE_URL}/chat/completions` directly with a Bearer token you configure.
+
 ## What's new — Interview Assistant Mode
 
 The Interview Assistant is opened from the speech-bubble icon in the overlay control bar (or pre-emptively while the translator is running, via Combined Mode).
@@ -64,6 +66,86 @@ When a fresh question is found, it's auto-filled into the Interview view's quest
 ## Combined Mode
 
 If Combined Mode is enabled (default: ON) the auto-detect pipeline runs while you are still in the Translator overlay — so the moment the speaker asks a question, the Interview view already has the question + ready-to-copy prompt waiting for you. There is **one** audio/transcript stream; we do not start a second microphone or duplicate any audio processing.
+
+If you also configure a **GPT API key** in Settings → Interview, Combined Mode will additionally call the model directly (via the OpenAI-compatible REST API you point it at) and render a structured suggested answer right in the Interview view — short answer, full answer, Vietnamese translation, vocabulary list, confidence score. See **Combined Mode with GPT API** below.
+
+## Combined Mode with GPT API
+
+When the optional GPT API integration is enabled, the pipeline becomes:
+
+```
+Audio Input
+  → Soniox real-time transcription
+  → auto language detection
+  → Vietnamese translation (existing translator)
+  → Translator panel
+  → If Interview Mode is ON:
+      → Detect interview question (multilingual cues + ?)
+      → Build GPT chat-completions request
+      → POST ${GPT_BASE_URL}/chat/completions  (Bearer ${GPT_API_KEY})
+      → Parse JSON answer
+      → Render suggested answer in the Interview Assistant panel
+```
+
+This is **not** a ChatGPT-account flow. We call the standard OpenAI REST API, which is supported by:
+
+- OpenAI directly (`https://api.openai.com/v1`)
+- Azure OpenAI (compatible mode)
+- Any OpenAI-compatible provider — Groq, Together, OpenRouter, Mistral La Plateforme, local `llama.cpp` server, Ollama with the OpenAI shim, …
+
+You only have to change `GPT_BASE_URL` to point at the right base.
+
+The model is asked to return one of two JSON shapes:
+
+- An interview answer object (`is_interview_question: true` plus `short_answer`, `full_answer`, `answer_vi`, `important_vocabulary`, `confidence`, …)
+- A "not a question" object (`is_interview_question: false`, `reason`, `confidence`)
+
+The app parses JSON safely. If parsing fails, it retries the request once with an explicit "reply with valid JSON only" reminder. If the second response still fails to parse, the app shows a friendly error message and lets the user click **Regenerate**.
+
+### Anti-spam guarantees
+
+- 1.5–3 s debounce after the last transcript update (configurable)
+- The detector skips fragments under `gptMinWords` (default 5 words)
+- The most recent ~10 questions are cached by FNV-1a fingerprint + Dice-bigram similarity (≥ 0.85), so the same question never spends two API calls
+- An in-flight request is aborted as soon as a fresher question arrives
+- Optional toggle: **Auto-call GPT on detected question** (default ON). Off → the app only fills in the question and waits for the user to press **Generate Answer**
+
+### Configuration
+
+Configure either inside the app (Settings → Interview → Combined Mode (GPT API)) or by copying `.env.example` to `.env` and filling in:
+
+```
+SONIOX_API_KEY=your_soniox_api_key_here
+GPT_API_KEY=your_gpt_api_key_here
+GPT_BASE_URL=https://api.openai.com/v1
+GPT_MODEL=gpt-4o-mini
+```
+
+`.env` is git-ignored. The app reads these values from `localStorage` at runtime — the `.env` file is a convenience for advanced users; the in-app Settings UI is the canonical store.
+
+The API-key field is masked everywhere in the UI (`sk-****abcd`) and is never logged.
+
+### Interview Context
+
+In the same settings panel you can fill in:
+
+- **Target answer language** — Deutsch / English / Vietnamese (default Deutsch)
+- **Language level** — A1 / A2 / A2-B1 / B1 / B2 (default A2-B1)
+- **Ausbildung / Beruf** (default `Maschinen- und Anlagenführer`)
+- **Company name** (default `Teledoor`)
+- **User background** — free text
+- **Strengths** — free text
+- **Work experience** — free text
+
+These values are interpolated into the GPT prompt so suggestions are tailored to your situation.
+
+### Common errors
+
+- *"Vui lòng nhập SONIOX_API_KEY trong Settings."* — fill in the Soniox key under Translation settings (unchanged from upstream).
+- *"Vui lòng nhập GPT_API_KEY trong Settings để tạo câu trả lời gợi ý."* — Combined Mode needs a GPT key. Either configure one or stick with Manual Mode (Section E "Open ChatGPT").
+- *"Không thể nhận diện âm thanh. Vui lòng kiểm tra microphone hoặc SONIOX_API_KEY."* — microphone permission denied or Soniox key invalid.
+- *"Không thể tạo câu trả lời gợi ý. Vui lòng kiểm tra GPT_API_KEY, GPT_BASE_URL hoặc GPT_MODEL."* — HTTP 4xx/5xx from the GPT endpoint. Click the error to see the raw status. The most common cause is a typo in the base URL or an unsupported model name.
+- *Offline* — the request fails with a network error and the panel goes into the `error` state. Reconnect and click **Regenerate**.
 
 ## ChatGPT Account Manual Mode — what we deliberately do NOT do
 

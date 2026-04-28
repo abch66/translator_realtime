@@ -674,12 +674,98 @@
           </label>
         </div>
 
+        <div class="settings-section">
+          <span class="field-label">Combined Mode (GPT API)</span>
+          <p class="hint">
+            Optional: connect a GPT API key (OpenAI, Azure OpenAI, Groq, Together, OpenRouter,
+            local llama.cpp server, …) and the app will auto-build a suggested answer when a
+            question is detected. We call <code>${BASE_URL}/chat/completions</code> directly —
+            no ChatGPT account, no webview, no cookies.
+          </p>
+
+          <span class="field-label">GPT API Key</span>
+          <div class="input-group">
+            <input type="password" id="iv-set-gpt-key" placeholder="sk-..." autocomplete="off" />
+            <button id="iv-btn-toggle-gpt-key" class="icon-btn small" title="Show/Hide" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <p class="hint" id="iv-gpt-key-mask">No key configured.</p>
+
+          <span class="field-label">GPT Base URL</span>
+          <input type="text" id="iv-set-gpt-base-url" placeholder="https://api.openai.com/v1" />
+
+          <span class="field-label">GPT Model</span>
+          <input type="text" id="iv-set-gpt-model" placeholder="gpt-4o-mini" />
+
+          <label class="settings-toggle">
+            <input type="checkbox" id="iv-set-combined-auto-call" />
+            <span>Auto-call GPT on detected question</span>
+          </label>
+
+          <span class="field-label">Minimum words before calling GPT</span>
+          <input type="number" id="iv-set-gpt-min-words" min="1" max="50" step="1" />
+        </div>
+
+        <div class="settings-section">
+          <span class="field-label">Interview Context</span>
+          <p class="hint">Used to personalise GPT's suggested answer.</p>
+
+          <label class="iv-field iv-field-wide">
+            <span>Target answer language (Combined Mode)</span>
+            <select id="iv-ctx-target-language">
+              <option value="Deutsch">Deutsch</option>
+              <option value="English">English</option>
+              <option value="Vietnamese">Vietnamese</option>
+            </select>
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>Language level</span>
+            <select id="iv-ctx-language-level">
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="A2-B1">A2-B1</option>
+              <option value="B1">B1</option>
+              <option value="B2">B2</option>
+            </select>
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>Ausbildung / Beruf</span>
+            <input type="text" id="iv-ctx-beruf" placeholder="Maschinen- und Anlagenführer" />
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>Company name</span>
+            <input type="text" id="iv-ctx-company" placeholder="Teledoor" />
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>User background</span>
+            <textarea id="iv-ctx-background" rows="2" placeholder="Education, current situation, motivation…"></textarea>
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>Strengths</span>
+            <textarea id="iv-ctx-strengths" rows="2" placeholder="What makes you a strong candidate?"></textarea>
+          </label>
+
+          <label class="iv-field iv-field-wide">
+            <span>Work experience</span>
+            <textarea id="iv-ctx-work-experience" rows="2" placeholder="Past jobs, internships, projects…"></textarea>
+          </label>
+        </div>
+
         <div class="settings-section iv-warning-box">
           <strong>Privacy & ethics</strong>
           <p class="hint">
-            We never store your ChatGPT password, cookies, or session. Manual mode only:
-            you sign in to ChatGPT yourself, you copy/paste prompts and answers yourself.
-            Do not use this app to cheat or bypass interview rules.
+            We never store your ChatGPT password, cookies, or session. The Manual Mode and the
+            Combined Mode (GPT API key) are the only two ways the app interacts with a model —
+            both go through endpoints YOU configure. Do not use this app to cheat or bypass
+            interview rules.
           </p>
         </div>
       </div>
@@ -874,6 +960,57 @@
           <button id="iv-btn-copy-answer" class="iv-btn">Copy Answer</button>
           <button id="iv-btn-clear-answer" class="iv-btn iv-btn-secondary">Clear Answer</button>
         </div>
+      </section>
+
+      <!-- H. Combined Mode (GPT API) -->
+      <section class="iv-section">
+        <h3 class="iv-section-title">H. Combined Mode — GPT Suggested Answer</h3>
+        <div class="iv-combined-status">
+          <span class="iv-pill" id="iv-mode-translator">Translator: <b>OFF</b></span>
+          <span class="iv-pill" id="iv-mode-interview">Interview: <b>OFF</b></span>
+          <span class="iv-pill iv-pill-combined" id="iv-mode-combined">Combined: <b>OFF</b></span>
+          <span class="iv-status iv-loading" id="iv-gpt-status">idle</span>
+        </div>
+        <div class="iv-meta-line">
+          <span class="iv-meta-label">Detected question:</span>
+          <span id="iv-cb-question">—</span>
+        </div>
+        <div class="iv-meta-line">
+          <span class="iv-meta-label">Vietnamese question:</span>
+          <span id="iv-cb-question-vi">—</span>
+        </div>
+        <div class="iv-cb-answer-grid">
+          <div>
+            <div class="iv-meta-label">Short answer</div>
+            <div id="iv-cb-short" class="iv-translation-box"></div>
+          </div>
+          <div>
+            <div class="iv-meta-label">Full answer</div>
+            <div id="iv-cb-full" class="iv-translation-box"></div>
+          </div>
+          <div>
+            <div class="iv-meta-label">Vietnamese translation of answer</div>
+            <div id="iv-cb-answer-vi" class="iv-translation-box"></div>
+          </div>
+          <div>
+            <div class="iv-meta-label">Important vocabulary</div>
+            <ul id="iv-cb-vocab" class="iv-vocab-list"></ul>
+          </div>
+        </div>
+        <div class="iv-meta-line">
+          <span class="iv-meta-label">Confidence:</span>
+          <span id="iv-cb-confidence">—</span>
+        </div>
+        <div class="iv-row">
+          <button id="iv-btn-cb-generate" class="iv-btn iv-btn-primary">Generate Answer</button>
+          <button id="iv-btn-cb-regenerate" class="iv-btn">Regenerate</button>
+          <button id="iv-btn-cb-shorter" class="iv-btn">Shorter</button>
+          <button id="iv-btn-cb-simpler" class="iv-btn">Simpler</button>
+          <button id="iv-btn-cb-copy-short" class="iv-btn">Copy Short</button>
+          <button id="iv-btn-cb-copy-full" class="iv-btn">Copy Full</button>
+          <button id="iv-btn-cb-clear" class="iv-btn iv-btn-secondary">Clear</button>
+        </div>
+        <div id="iv-cb-error" class="iv-error" style="display:none"></div>
       </section>
 
       <!-- G. History -->

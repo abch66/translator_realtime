@@ -33,6 +33,26 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     answerStyle: 'Natural', // 'Natural' | 'Professional' | 'Confident' | 'Humble'
     interviewType: 'Job interview',
     userContext: '',
+
+    // Combined Mode — GPT API integration (NOT a ChatGPT-account flow).
+    // We call ${gptBaseUrl}/chat/completions with the user's API key.
+    gptApiKey: '',
+    gptBaseUrl: 'https://api.openai.com/v1',
+    gptModel: 'gpt-4o-mini',
+    gptMinWords: 5,
+    combinedAutoCall: true, // call GPT automatically when a question is detected
+    combinedStreaming: false, // optional streaming response (when supported)
+
+    // Interview-context defaults aligned with the Ausbildung use-case from the spec.
+    ivContext: {
+        targetLanguage: 'Deutsch', // 'Deutsch' | 'English' | 'Vietnamese'
+        languageLevel: 'A2-B1',    // 'A1' | 'A2' | 'A2-B1' | 'B1' | 'B2'
+        beruf: 'Maschinen- und Anlagenführer',
+        companyName: 'Teledoor',
+        userBackground: '',
+        strengths: '',
+        workExperience: '',
+    },
 };
 
 function safeParse(raw) {
@@ -54,9 +74,10 @@ class InterviewSettingsStorage {
     }
 
     _load() {
-        if (!this._storage) return { ...DEFAULT_INTERVIEW_SETTINGS };
-        const parsed = safeParse(this._storage.getItem(STORAGE_KEY));
-        return { ...DEFAULT_INTERVIEW_SETTINGS, ...(parsed || {}) };
+        if (!this._storage) return { ...DEFAULT_INTERVIEW_SETTINGS, ivContext: { ...DEFAULT_INTERVIEW_SETTINGS.ivContext } };
+        const parsed = safeParse(this._storage.getItem(STORAGE_KEY)) || {};
+        const ivContext = { ...DEFAULT_INTERVIEW_SETTINGS.ivContext, ...(parsed.ivContext || {}) };
+        return { ...DEFAULT_INTERVIEW_SETTINGS, ...parsed, ivContext };
     }
 
     get() {
@@ -64,7 +85,12 @@ class InterviewSettingsStorage {
     }
 
     update(patch) {
-        this._cache = { ...this._cache, ...patch };
+        // Deep-merge nested ivContext so partial updates don't drop sibling keys.
+        const merged = { ...this._cache, ...patch };
+        if (patch && patch.ivContext) {
+            merged.ivContext = { ...this._cache.ivContext, ...patch.ivContext };
+        }
+        this._cache = merged;
         if (this._storage) {
             try {
                 this._storage.setItem(STORAGE_KEY, JSON.stringify(this._cache));

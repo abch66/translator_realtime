@@ -95,8 +95,11 @@ class App {
             this.interviewPanel = new InterviewAssistantPanel({
                 getLatestTranscript: () => this.transcriptUI?.getPlainText() || '',
                 openExternal: (url) => this._openExternalUrl(url),
+                isTranslatorRunning: () => !!this.isRunning,
             });
             this.interviewPanel.init();
+            this.interviewPanel.refreshTranslatorMode(!!this.isRunning);
+            this.interviewPanel.refreshGptKeyMask();
 
             // Forward transcript updates so auto-detect can run.
             this.transcriptUI.onTextUpdate(({ kind, text }) => {
@@ -156,6 +159,26 @@ class App {
             setVal('iv-set-duplicate', s.duplicateThreshold);
             setVal('iv-set-minlen', s.minQuestionLength);
             setVal('iv-set-chatgpt-url', s.chatGptUrl);
+
+            // GPT API config
+            setVal('iv-set-gpt-key', s.gptApiKey || '');
+            setVal('iv-set-gpt-base-url', s.gptBaseUrl || '');
+            setVal('iv-set-gpt-model', s.gptModel || '');
+            setVal('iv-set-gpt-min-words', s.gptMinWords);
+            const autoCallEl = document.getElementById('iv-set-combined-auto-call');
+            if (autoCallEl) autoCallEl.checked = !!s.combinedAutoCall;
+
+            // Interview Context
+            const ctx = s.ivContext || {};
+            setVal('iv-ctx-target-language', ctx.targetLanguage || 'Deutsch');
+            setVal('iv-ctx-language-level', ctx.languageLevel || 'A2-B1');
+            setVal('iv-ctx-beruf', ctx.beruf || '');
+            setVal('iv-ctx-company', ctx.companyName || '');
+            setVal('iv-ctx-background', ctx.userBackground || '');
+            setVal('iv-ctx-strengths', ctx.strengths || '');
+            setVal('iv-ctx-work-experience', ctx.workExperience || '');
+
+            this.interviewPanel?.refreshGptKeyMask();
         };
 
         sync();
@@ -189,6 +212,38 @@ class App {
             const v = String(e.target.value || '').trim() || 'https://chatgpt.com';
             interviewSettingsStorage.update({ chatGptUrl: v });
         });
+
+        const bindStr = (id, key) => {
+            document.getElementById(id)?.addEventListener('change', (e) => {
+                interviewSettingsStorage.update({ [key]: String(e.target.value || '').trim() });
+            });
+        };
+        bindStr('iv-set-gpt-key', 'gptApiKey');
+        bindStr('iv-set-gpt-base-url', 'gptBaseUrl');
+        bindStr('iv-set-gpt-model', 'gptModel');
+        bindNum('iv-set-gpt-min-words', 'gptMinWords');
+        bindBool('iv-set-combined-auto-call', 'combinedAutoCall');
+
+        // Toggle show/hide for the GPT key field.
+        document.getElementById('iv-btn-toggle-gpt-key')?.addEventListener('click', () => {
+            const el = document.getElementById('iv-set-gpt-key');
+            if (!el) return;
+            el.type = el.type === 'password' ? 'text' : 'password';
+        });
+
+        const bindCtx = (id, key) => {
+            document.getElementById(id)?.addEventListener('change', (e) => {
+                const cur = interviewSettingsStorage.get().ivContext || {};
+                interviewSettingsStorage.update({ ivContext: { ...cur, [key]: String(e.target.value || '') } });
+            });
+        };
+        bindCtx('iv-ctx-target-language', 'targetLanguage');
+        bindCtx('iv-ctx-language-level', 'languageLevel');
+        bindCtx('iv-ctx-beruf', 'beruf');
+        bindCtx('iv-ctx-company', 'companyName');
+        bindCtx('iv-ctx-background', 'userBackground');
+        bindCtx('iv-ctx-strengths', 'strengths');
+        bindCtx('iv-ctx-work-experience', 'workExperience');
     }
 
     async _checkPlatformSupport() {
@@ -1491,6 +1546,9 @@ class App {
         btn.classList.toggle('recording', this.isRunning);
         iconPlay.style.display = this.isRunning ? 'none' : 'block';
         iconStop.style.display = this.isRunning ? 'block' : 'none';
+
+        // Keep the Combined-Mode pills in sync with translator state.
+        try { this.interviewPanel?.refreshTranslatorMode(!!this.isRunning); } catch { /* ignore */ }
     }
 
     // ─── Transcript Persistence ───────────────────────────────

@@ -21,6 +21,9 @@ const { detectLanguage, languageLabel, QUESTION_CUES } = await importFrom('src/j
 const { findQuestions, detectLatestQuestion } = await importFrom('src/js/services/interview/questionDetector.js');
 const { DuplicateQuestionGuard } = await importFrom('src/js/services/interview/duplicateQuestionGuard.js');
 const { buildInterviewPrompt } = await importFrom('src/js/services/interview/promptBuilder.js');
+const { parseJsonFromCompletion, GptClientError } = await importFrom('src/js/services/interview/gptClient.js');
+const { CombinedAnswerService } = await importFrom('src/js/services/interview/combinedAnswerService.js');
+const { maskApiKey } = await importFrom('src/js/utils/secretUtils.js');
 
 let pass = 0;
 let fail = 0;
@@ -78,6 +81,42 @@ ok('prompt contains SYSTEM', prompt.includes('SYSTEM / ROLE'));
 ok('prompt contains question', prompt.includes('Tell me about yourself'));
 ok('prompt contains output format', prompt.includes('OUTPUT FORMAT'));
 ok('prompt contains anti-cheat clause', prompt.includes('Do not help with deception'));
+
+console.log('# secretUtils');
+ok('mask short key', maskApiKey('sk-1234') === '****');
+ok('mask long key shows head/tail', maskApiKey('sk-abcdefghij1234') === 'sk--****1234');
+ok('empty -> empty', maskApiKey('') === '' && maskApiKey(null) === '');
+
+console.log('# gptClient.parseJsonFromCompletion');
+ok('parses plain JSON', parseJsonFromCompletion('{"a":1}').a === 1);
+ok('strips ```json fence',
+    parseJsonFromCompletion('```json\n{"a":2}\n```').a === 2);
+ok('snips surrounding prose',
+    parseJsonFromCompletion('Here is the answer: {"a":3}\nThanks!').a === 3);
+let parseThrew = false;
+try { parseJsonFromCompletion('not json at all'); } catch (e) { parseThrew = e instanceof GptClientError && e.code === 'parse'; }
+ok('throws GptClientError on garbage', parseThrew);
+
+console.log('# combinedAnswerService');
+const cb = new CombinedAnswerService({
+    getSettings: () => ({
+        gptApiKey: '',
+        gptBaseUrl: 'https://api.openai.com/v1',
+        gptModel: 'gpt-4o-mini',
+        gptMinWords: 5,
+        combinedMode: true,
+        combinedAutoCall: true,
+        duplicateThreshold: 0.85,
+        ivContext: { targetLanguage: 'Deutsch', languageLevel: 'A2-B1' },
+    }),
+});
+let missingKeyErr = null;
+try {
+    await cb.generate({ originalTranscript: 'Warum möchten Sie diese Ausbildung machen?' });
+} catch (e) { missingKeyErr = e; }
+ok('missing-key error code', missingKeyErr?.code === 'missing-key');
+ok('combined service has cache primitives',
+    typeof cb.regenerate === 'function' && typeof cb.clearCache === 'function');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

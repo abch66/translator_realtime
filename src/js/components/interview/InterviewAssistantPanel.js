@@ -21,8 +21,10 @@ import { buildInterviewPrompt } from '../../services/interview/promptBuilder.js'
 import { QuestionDetectionPipeline } from '../../services/interview/questionDetector.js';
 import { DuplicateQuestionGuard } from '../../services/interview/duplicateQuestionGuard.js';
 import { interviewHistoryService } from '../../services/interview/interviewHistoryService.js';
+import { CombinedAnswerService } from '../../services/interview/combinedAnswerService.js';
 import { interviewSettingsStorage } from '../../storage/interviewSettingsStorage.js';
 import { detectLanguage, languageLabel } from '../../utils/languageUtils.js';
+import { maskApiKey } from '../../utils/secretUtils.js';
 
 const TARGET_LANG_OPTIONS = ['Vietnamese', 'English', 'German'];
 const ANSWER_LENGTH_OPTIONS = ['Short', 'Medium', 'Detailed'];
@@ -53,11 +55,13 @@ function fillSelect(select, options, current) {
 }
 
 export class InterviewAssistantPanel {
-    constructor({ getLatestTranscript, openExternal } = {}) {
+    constructor({ getLatestTranscript, openExternal, isTranslatorRunning } = {}) {
         this.getLatestTranscript = getLatestTranscript || (() => '');
         this.openExternal = openExternal || ((url) => window.open(url, '_blank'));
+        this.isTranslatorRunning = isTranslatorRunning || (() => false);
         this._currentEntryId = null;
         this._lastDetectedQuestion = null;
+        this._lastCombinedQuestion = null;
 
         this.guard = new DuplicateQuestionGuard({
             threshold: interviewSettingsStorage.get().duplicateThreshold,
@@ -67,6 +71,13 @@ export class InterviewAssistantPanel {
             minQuestionLength: interviewSettingsStorage.get().minQuestionLength,
             onStatusChange: (status) => this._setDetectionStatus(status),
             onQuestion: (q) => this._handleAutoDetectedQuestion(q),
+        });
+
+        this.combined = new CombinedAnswerService({
+            getSettings: () => interviewSettingsStorage.get(),
+            onStatus: (s) => this._setCombinedStatus(s),
+            onAnswer: (a) => this._renderCombinedAnswer(a),
+            onError: (e) => this._renderCombinedError(e),
         });
 
         interviewSettingsStorage.onChange((s) => this._applySettings(s));
@@ -97,6 +108,15 @@ export class InterviewAssistantPanel {
         $('iv-btn-save-answer')?.addEventListener('click', () => this._saveAnswer());
         $('iv-btn-copy-answer')?.addEventListener('click', () => this._copy('iv-pasted-answer'));
         $('iv-btn-clear-answer')?.addEventListener('click', () => this._clearAnswer());
+
+        // Combined Mode (GPT API) buttons.
+        $('iv-btn-cb-generate')?.addEventListener('click', () => this._combinedGenerate());
+        $('iv-btn-cb-regenerate')?.addEventListener('click', () => this._combinedGenerate({ force: true }));
+        $('iv-btn-cb-shorter')?.addEventListener('click', () => this._combinedGenerate({ force: true, style: 'shorter' }));
+        $('iv-btn-cb-simpler')?.addEventListener('click', () => this._combinedGenerate({ force: true, style: 'simpler' }));
+        $('iv-btn-cb-copy-short')?.addEventListener('click', () => this._copyValue($('iv-cb-short')?.textContent));
+        $('iv-btn-cb-copy-full')?.addEventListener('click', () => this._copyValue($('iv-cb-full')?.textContent));
+        $('iv-btn-cb-clear')?.addEventListener('click', () => this._combinedClear());
 
         // History controls.
         $('iv-history-search')?.addEventListener('input', () => this._renderHistory());
@@ -210,6 +230,19 @@ export class InterviewAssistantPanel {
             // Auto-build a prompt for the user to copy.
             this._generatePrompt({ silent: true });
         }
+
+        // Combined Mode auto-call (only when translator is running + setting on).
+        const settings = interviewSettingsStorage.get();
+        if (settings.combinedMode && settings.combinedAutoCall && this.isTranslatorRunning()) {
+            this._lastCombinedQuestion = { text, language };
+            this._setText('iv-cb-question', text);
+            this.combined.onDetectedQuestion({
+                text,
+                language: languageLabel(language),
+                vietnameseTranslation: language === 'vi' ? text : '',
+            });
+        }
+        this._refreshModePills();
     }
 
     _setDetectionStatus(status) {
@@ -451,5 +484,155 @@ export class InterviewAssistantPanel {
         t.classList.add('show');
         clearTimeout(this._toastTimer);
         this._toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+    }
+
+    // ─── Combined Mode (GPT API) ───────────────────────────────
+
+    refreshGptKeyMask() {
+        const el = $('iv-gpt-key-mask');
+        if (!el) return;
+        const k = (interviewSettingsStorage.get().gptApiKey || '').trim();
+        el.textContent = k ? `Configured: ${maskApiKey(k)}` : 'No key configured.';
+    }
+
+    refreshTranslatorMode(running) {
+        const el = $('iv-mode-translator');
+        if (!el) return;
+        el.dataset.on = running ? '1' : '0';
+        el.innerHTML = `Translator: <b>${running ? 'ON' : 'OFF'}</b>`;
+        this._refreshModePills();
+    }
+
+    _refreshModePills() {
+        const settings = interviewSettingsStorage.get();
+        const ivOn = !!settings.enabled;
+        const trOn = this.isTranslatorRunning();
+        const cbOn = trOn && ivOn && !!settings.combinedMode;
+        const ivPill = $('iv-mode-interview');
+        if (ivPill) {
+            ivPill.dataset.on = ivOn ? '1' : '0';
+            ivPill.innerHTML = `Interview: <b>${ivOn ? 'ON' : 'OFF'}</b>`;
+        }
+        const cbPill = $('iv-mode-combined');
+        if (cbPill) {
+            cbPill.dataset.on = cbOn ? '1' : '0';
+            cbPill.innerHTML = `Combined: <b>${cbOn ? 'ON' : 'OFF'}</b>`;
+        }
+    }
+
+    _setCombinedStatus(state) {
+        const el = $('iv-gpt-status');
+        if (!el) return;
+        el.dataset.state = state;
+        const labels = {
+            idle: 'idle',
+            loading: 'calling GPT…',
+            answer: 'answer ready',
+            cached: 'served from cache',
+            'skipped-short': 'skipped — too short',
+            'not-question': 'not an interview question',
+            error: 'error',
+            aborted: 'aborted',
+            'missing-key': 'GPT key missing',
+        };
+        el.textContent = labels[state] || state;
+        if (state !== 'error') {
+            const err = $('iv-cb-error');
+            if (err) err.style.display = 'none';
+        }
+    }
+
+    _renderCombinedAnswer(answer) {
+        if (!answer) return;
+        this._setText('iv-cb-question', answer.detected_question || this._lastCombinedQuestion?.text || '');
+        this._setText('iv-cb-question-vi', answer.question_vi || '—');
+        this._setText('iv-cb-short', answer.short_answer || '');
+        this._setText('iv-cb-full', answer.full_answer || '');
+        this._setText('iv-cb-answer-vi', answer.answer_vi || '');
+        const conf = typeof answer.confidence === 'number' ? answer.confidence.toFixed(2) : '—';
+        this._setText('iv-cb-confidence', String(conf));
+        const ul = $('iv-cb-vocab');
+        if (ul) {
+            ul.innerHTML = '';
+            for (const v of (answer.important_vocabulary || [])) {
+                const li = document.createElement('li');
+                const w = document.createElement('span');
+                w.className = 'iv-vocab-word';
+                w.textContent = v.word;
+                const m = document.createElement('span');
+                m.textContent = v.meaning_vi ? ` — ${v.meaning_vi}` : '';
+                li.appendChild(w);
+                li.appendChild(m);
+                ul.appendChild(li);
+            }
+        }
+        if (!answer.is_interview_question) {
+            this._renderCombinedNotAQuestion(answer);
+        }
+    }
+
+    _renderCombinedNotAQuestion(answer) {
+        const reason = answer?.reason || '(model said this is not an interview question)';
+        const err = $('iv-cb-error');
+        if (err) {
+            err.style.display = '';
+            err.textContent = `Model decided this isn't an interview question: ${reason}`;
+        }
+    }
+
+    _renderCombinedError(err) {
+        const el = $('iv-cb-error');
+        if (!el) return;
+        const code = err?.code || 'error';
+        const messages = {
+            'missing-key': 'Vui lòng nhập GPT_API_KEY trong Settings để tạo câu trả lời gợi ý.',
+            'network': 'Mất mạng — không thể gọi GPT API. Vui lòng kiểm tra kết nối và thử lại.',
+            'http': 'Không thể tạo câu trả lời gợi ý. Vui lòng kiểm tra GPT_API_KEY, GPT_BASE_URL hoặc GPT_MODEL.',
+            'parse': 'GPT trả về JSON không hợp lệ. Đã thử lại 1 lần — vui lòng bấm Regenerate.',
+            'invalid': 'GPT phản hồi không đầy đủ. Vui lòng thử lại.',
+        };
+        el.style.display = '';
+        el.textContent = `${messages[code] || 'GPT error'}\n${err?.message ? '— ' + err.message : ''}`.trim();
+    }
+
+    async _combinedGenerate({ force = false, style } = {}) {
+        const settings = interviewSettingsStorage.get();
+        if (!settings.gptApiKey) {
+            this._renderCombinedError({ code: 'missing-key' });
+            this._setCombinedStatus('missing-key');
+            return;
+        }
+        // Pull the question to answer: prefer Section A's input, fall back to last detection.
+        const question =
+            ($('iv-question-input')?.value || '').trim()
+            || this._lastCombinedQuestion?.text
+            || (this.getLatestTranscript() || '').trim();
+        if (!question) {
+            this._toast('No question to answer yet.');
+            return;
+        }
+        const lang = detectLanguage(question);
+        try {
+            await this.combined.generate({
+                originalTranscript: question,
+                vietnameseTranslation: lang === 'vi' ? question : '',
+                detectedLanguage: languageLabel(lang),
+                style,
+                force,
+            });
+        } catch (e) {
+            // already handled by onError listener
+        }
+    }
+
+    _combinedClear() {
+        ['iv-cb-short', 'iv-cb-full', 'iv-cb-answer-vi', 'iv-cb-question', 'iv-cb-question-vi', 'iv-cb-confidence']
+            .forEach((id) => this._setText(id, ''));
+        const ul = $('iv-cb-vocab');
+        if (ul) ul.innerHTML = '';
+        const err = $('iv-cb-error');
+        if (err) err.style.display = 'none';
+        this._setCombinedStatus('idle');
+        this.combined.clearCache();
     }
 }
