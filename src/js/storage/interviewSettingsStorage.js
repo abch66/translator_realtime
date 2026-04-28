@@ -27,7 +27,7 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     savePastedAnswersToHistory: true,
 
     // Defaults for the prompt template.
-    targetLanguage: 'Vietnamese', // 'Vietnamese' | 'English' | 'German'
+    targetLanguage: 'German', // 'Vietnamese' | 'English' | 'German' — default: German (Ausbildung use-case)
     answerLength: 'Medium', // 'Short' | 'Medium' | 'Detailed'
     languageLevel: 'B1', // 'Simple' | 'A2' | 'B1' | 'B2' | 'Professional'
     answerStyle: 'Natural', // 'Natural' | 'Professional' | 'Confident' | 'Humble'

@@ -17,11 +17,17 @@ import { chatCompletionStream, chatCompletion, GptClientError } from './gptClien
 import { fingerprint } from '../../utils/hashUtils.js';
 import { isSimilar, normalizeText } from '../../utils/textSimilarity.js';
 
-const SYSTEM_PROMPT =
-    'You are an interview assistant. Answer the interviewer\'s question with one natural answer only. ' +
-    'Do not include short answers. Do not give multiple options. ' +
-    'Keep the answer concise and sufficient, around 3-6 sentences depending on question complexity. ' +
-    'Use simple German A2-B1 if the question is in German.';
+function buildSystemPrompt({ targetLanguage = 'Deutsch', languageLevel = 'A2-B1' } = {}) {
+    const lang = String(targetLanguage || 'Deutsch');
+    const level = String(languageLevel || 'A2-B1');
+    return [
+        'You are an interview assistant. Answer the interviewer\'s question with one natural answer only.',
+        'Do not include short answers. Do not give multiple options.',
+        'Keep the answer concise and sufficient, around 3-6 sentences depending on question complexity.',
+        `Always reply in ${lang} at language level ${level}, regardless of the question language.`,
+        'Use simple, natural sentences and clear grammar. Do not invent fake experience.',
+    ].join(' ');
+}
 
 const ALLOWED_STYLES = new Set(['natural', 'simpler']);
 
@@ -96,9 +102,20 @@ export class CombinedAnswerService {
         }
 
         const styleHint = ALLOWED_STYLES.has(style) ? style : 'natural';
-        const userPrompt = buildUserPrompt({ question, detectedLanguage, vietnameseTranslation, style: styleHint });
+        const ctx = settings.ivContext || {};
+        const systemPrompt = buildSystemPrompt({
+            targetLanguage: ctx.targetLanguage,
+            languageLevel: ctx.languageLevel,
+        });
+        const userPrompt = buildUserPrompt({
+            question,
+            detectedLanguage,
+            vietnameseTranslation,
+            style: styleHint,
+            targetLanguage: ctx.targetLanguage,
+        });
         const messages = [
-            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
         ];
 
@@ -215,12 +232,13 @@ export class CombinedAnswerService {
     }
 }
 
-function buildUserPrompt({ question, detectedLanguage, vietnameseTranslation, style }) {
+function buildUserPrompt({ question, detectedLanguage, vietnameseTranslation, style, targetLanguage }) {
     const lines = [];
     lines.push(`Question: ${question}`);
     if (detectedLanguage) lines.push(`Detected language: ${detectedLanguage}`);
     if (vietnameseTranslation) lines.push(`Vietnamese translation of question: ${vietnameseTranslation}`);
-    if (style === 'simpler') lines.push('Style hint: use the simplest possible language (A2 vocabulary).');
+    if (targetLanguage) lines.push(`Answer language: ${targetLanguage}`);
+    if (style === 'simpler') lines.push('Style hint: use the simplest possible language.');
     lines.push(
         'Reply with ONLY the answer text — no preamble, no labels, no markdown, no JSON. ' +
         '3-6 sentences total.',

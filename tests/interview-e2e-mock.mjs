@@ -179,7 +179,7 @@ const r3 = await cb.regenerate({
 });
 ok('regenerate forces a fresh call', _fetchCallCount === 2);
 ok('regenerate body has simpler style hint',
-    _lastFetchBody?.messages?.some((m) => /A2 vocabulary/.test(m.content || '')));
+    _lastFetchBody?.messages?.some((m) => /simplest possible language/.test(m.content || '')));
 
 const r4 = await cb.generate({ originalTranscript: 'short' }); // 1 word, < gptMinWords
 ok('short transcript skipped', r4 === null);

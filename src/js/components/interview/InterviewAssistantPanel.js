@@ -120,6 +120,27 @@ export class InterviewAssistantPanel {
 
         $('iv-btn-split-toggle')?.addEventListener('click', () => this.toggleSplitView());
 
+        // Inline answer-language + level pickers in Section H. Persist into
+        // `ivContext` so the system prompt picks them up on the next call.
+        const tlEl = $('iv-cb-target-language');
+        const llEl = $('iv-cb-language-level');
+        if (tlEl) {
+            tlEl.value = settings.ivContext?.targetLanguage || 'Deutsch';
+            tlEl.addEventListener('change', (e) => {
+                interviewSettingsStorage.update({
+                    ivContext: { targetLanguage: e.target.value },
+                });
+            });
+        }
+        if (llEl) {
+            llEl.value = settings.ivContext?.languageLevel || 'A2-B1';
+            llEl.addEventListener('change', (e) => {
+                interviewSettingsStorage.update({
+                    ivContext: { languageLevel: e.target.value },
+                });
+            });
+        }
+
         // History controls.
         $('iv-history-search')?.addEventListener('input', () => this._renderHistory());
         $('iv-btn-history-clear')?.addEventListener('click', () => this._clearHistory());

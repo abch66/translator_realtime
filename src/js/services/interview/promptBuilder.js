@@ -59,7 +59,7 @@ export function buildInterviewPrompt(input) {
     );
     const userContext = safe(input.userContext, '(Not provided.)');
     const interviewType = safe(input.interviewType, 'General interview');
-    const targetLanguage = safe(input.targetLanguage, 'Vietnamese');
+    const targetLanguage = safe(input.targetLanguage, 'German');
     const answerLength = safe(input.answerLength, 'Medium');
     const answerStyle = safe(input.answerStyle, 'Natural');
     const languageLevel = safe(input.languageLevel, 'B1');

@@ -441,3 +441,17 @@ body.iv-split-mode #interview-view .iv-section:not(.iv-section-combined) {
     white-space: pre-wrap;
     line-height: 1.45;
 }
+
+.iv-cb-lang-row {
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 8px;
+}
+
+.iv-cb-lang-row .iv-meta-label {
+    margin-right: 4px;
+}
+
+.iv-cb-lang-row .iv-select {
+    min-width: 110px;
+}
