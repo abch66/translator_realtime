@@ -204,10 +204,23 @@
 
 .iv-history-meta {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     color: #9aa4af;
     font-size: 11px;
+    align-items: center;
 }
+.iv-history-date { font-variant-numeric: tabular-nums; }
+.iv-history-mode {
+    color: #6db4f5;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-size: 10px;
+    border: 1px solid rgba(109, 180, 245, 0.3);
+    border-radius: 999px;
+    padding: 0 6px;
+}
+.iv-history-type { color: #c8ced6; }
 
 .iv-history-question { line-height: 1.4; }
 .iv-history-answer { line-height: 1.4; color: #c8ced6; }

@@ -7,7 +7,7 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "test": "node tests/interview-smoke-test.mjs"
+    "test": "node tests/interview-smoke-test.mjs && node tests/interview-e2e-mock.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
