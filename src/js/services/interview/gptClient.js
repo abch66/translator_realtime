@@ -90,6 +90,7 @@ export async function chatCompletion({
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'application/json',
             },
             body: JSON.stringify(body),
             signal,
@@ -97,34 +98,69 @@ export async function chatCompletion({
     } catch (e) {
         throw new GptClientError('network', 'GPT request failed: ' + e.message, e);
     }
-    if (!res.ok) {
-        let detail = '';
-        try { detail = await res.text(); } catch { /* ignore */ }
-        throw new GptClientError('http', `GPT API HTTP ${res.status}${detail ? ': ' + detail.slice(0, 400) : ''}`);
+
+    // Read body as text first so we can report what actually came back even
+    // if it isn't JSON. Some OpenAI-compatible providers return SSE / plain
+    // text / HTML error pages with a 2xx status, which a naive res.json()
+    // hides behind an opaque parse error.
+    let bodyText = '';
+    try {
+        bodyText = await res.text();
+    } catch (e) {
+        throw new GptClientError('network', 'Could not read GPT response body: ' + e.message, e);
     }
+
+    if (!res.ok) {
+        const snippet = bodyText ? ': ' + bodyText.slice(0, 400) : '';
+        throw new GptClientError('http', `GPT API HTTP ${res.status}${snippet}`);
+    }
+
     let json;
     try {
-        json = await res.json();
+        json = JSON.parse(bodyText);
     } catch (e) {
-        throw new GptClientError('parse', 'GPT API returned non-JSON response', e);
+        const snippet = bodyText ? bodyText.slice(0, 400) : '(empty body)';
+        throw new GptClientError(
+            'parse',
+            `GPT API returned non-JSON response. First 400 chars:\n${snippet}`,
+            e,
+        );
     }
+
     const content = json?.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
-        throw new GptClientError('invalid', 'No completion content in GPT response');
+        const apiErr = json?.error?.message || JSON.stringify(json).slice(0, 400);
+        throw new GptClientError('invalid', `No completion content in GPT response. ${apiErr}`);
     }
     return { content, raw: json };
 }
 
 /**
  * Convenience wrapper — calls `chatCompletion`, parses the answer as JSON,
- * and retries once if parsing fails (re-asking the model for valid JSON).
+ * and retries once if parsing fails. Handles two failure modes:
+ *  1. HTTP body was not JSON (transport-level parse error) — retry once
+ *     with `response_format` removed in case the provider doesn't support it.
+ *  2. HTTP body was JSON but the model's `content` wasn't — retry once,
+ *     re-asking the model to reply with valid JSON only.
  */
 export async function chatCompletionJson(opts) {
-    const first = await chatCompletion({ ...opts, jsonResponse: true });
+    let first;
+    try {
+        first = await chatCompletion({ ...opts, jsonResponse: true });
+    } catch (e0) {
+        // Some OpenAI-compatible providers don't honor response_format and
+        // return a non-JSON body. Retry once without the json_object hint.
+        if (e0?.code === 'parse') {
+            first = await chatCompletion({ ...opts, jsonResponse: false });
+        } else {
+            throw e0;
+        }
+    }
+
     try {
         return { json: parseJsonFromCompletion(first.content), content: first.content };
     } catch (e1) {
-        // Retry once with an explicit reminder.
+        // Model's content wasn't valid JSON — re-ask once with explicit reminder.
         const retryMessages = [
             ...opts.messages,
             { role: 'assistant', content: first.content },

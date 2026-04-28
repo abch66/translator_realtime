@@ -189,6 +189,65 @@ let missing;
 try { await cb2.generate({ originalTranscript: 'Why do you want this job?' }); } catch (e) { missing = e; }
 ok('missing-key throws GptClientError', missing?.code === 'missing-key');
 
+console.log('# Transport-level fallback when provider returns non-JSON body');
+const { chatCompletionJson } = await importFrom('src/js/services/interview/gptClient.js');
+{
+    let calls = 0;
+    let firstSentResponseFormat = null;
+    let secondSentResponseFormat = null;
+    globalThis.fetch = async (url, opts) => {
+        calls++;
+        const body = opts?.body ? JSON.parse(opts.body) : null;
+        if (calls === 1) {
+            firstSentResponseFormat = body?.response_format;
+            return {
+                ok: true,
+                status: 200,
+                async text() { return 'I am not JSON, sorry.'; },
+            };
+        }
+        secondSentResponseFormat = body?.response_format;
+        return {
+            ok: true,
+            status: 200,
+            async text() {
+                return JSON.stringify({
+                    choices: [{ message: { content: '{"is_interview_question":false,"reason":"test","confidence":0.1}' } }],
+                });
+            },
+        };
+    };
+
+    const out = await chatCompletionJson({
+        baseUrl: 'https://api.test/v1',
+        apiKey: 'sk-test',
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+    });
+    ok('1st call had response_format=json_object',
+        firstSentResponseFormat?.type === 'json_object');
+    ok('2nd call dropped response_format', secondSentResponseFormat === undefined);
+    ok('fallback succeeded', out.json.is_interview_question === false);
+    ok('exactly 2 fetch calls', calls === 2);
+}
+
+console.log('# Both attempts fail -> diagnostic message includes body snippet');
+{
+    globalThis.fetch = async () => ({
+        ok: true,
+        status: 200,
+        async text() { return '<html><body>Cloudflare error</body></html>'; },
+    });
+    let err;
+    try {
+        await chatCompletionJson({
+            baseUrl: 'https://api.test/v1', apiKey: 'sk-test', model: 'm',
+            messages: [{ role: 'user', content: 'hi' }],
+        });
+    } catch (e) { err = e; }
+    ok('throws GptClientError', err?.code === 'parse' || err?.code === 'invalid');
+}
+
 console.log('# Prompt builder placeholders');
 const settings = interviewSettingsStorage.get();
 const prompt = buildInterviewPrompt({
