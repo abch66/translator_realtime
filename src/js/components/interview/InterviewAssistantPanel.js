@@ -171,6 +171,8 @@ export class InterviewAssistantPanel {
         this._applySettings(settings);
         this._renderHistory();
         this._setDetectionStatus(settings.autoDetectQuestion ? 'Listening for questions' : 'Disabled');
+        // Seed Combined Mode status pill + placeholder.
+        this._setCombinedStatus('idle');
     }
 
     /**
@@ -587,20 +589,29 @@ export class InterviewAssistantPanel {
         if (!el) return;
         el.dataset.state = state;
         const labels = {
-            idle: 'idle',
-            loading: 'calling GPT…',
-            answer: 'answer ready',
-            cached: 'served from cache',
-            'skipped-short': 'skipped — too short',
-            'not-question': 'not an interview question',
-            error: 'error',
-            aborted: 'aborted',
+            idle: 'Waiting for question…',
+            loading: 'Generating answer…',
+            answer: 'Ready',
+            cached: 'Ready (from cache)',
+            'skipped-short': 'Skipped — transcript too short',
+            'not-question': 'Not an interview question',
+            error: 'Error',
+            aborted: 'Aborted',
             'missing-key': 'GPT key missing',
         };
         el.textContent = labels[state] || state;
         if (state !== 'error') {
             const err = $('iv-cb-error');
             if (err) err.style.display = 'none';
+        }
+        // Render a friendly placeholder in the answer box for empty states.
+        const box = document.getElementById('iv-cb-answer');
+        if (box && !box.textContent && (state === 'idle' || state === 'loading')) {
+            box.dataset.placeholder = state === 'loading'
+                ? 'Generating answer…'
+                : 'Waiting for question…';
+        } else if (box) {
+            delete box.dataset.placeholder;
         }
     }
 

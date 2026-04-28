@@ -380,9 +380,10 @@ body.iv-split-mode #interview-view .iv-header {
     width: 100%;
 }
 
+/* Hide the manual-mode disclaimer in split mode — Section H only,
+ * and the Combined Mode pills already show all the safety state. */
 body.iv-split-mode #interview-view .iv-disclaimer {
-    flex: 0 0 100%;
-    width: 100%;
+    display: none !important;
 }
 
 body.iv-split-mode #interview-view .iv-split-translator {
@@ -395,7 +396,7 @@ body.iv-split-mode #interview-view .iv-split-translator {
     padding: 12px 14px;
     border-right: 1px solid rgba(255, 255, 255, 0.06);
     overflow-y: auto;
-    height: calc(100vh - 96px);
+    height: calc(100vh - 50px);
     background: rgba(0, 0, 0, 0.15);
 }
 
@@ -405,7 +406,17 @@ body.iv-split-mode #interview-view .iv-body {
     max-width: 50%;
     box-sizing: border-box;
     overflow-y: auto;
-    height: calc(100vh - 96px);
+    height: calc(100vh - 50px);
+    padding: 12px 14px;
+}
+
+/* In split mode, Section H is the only visible section — make it
+ * fill the right column without inheriting the multi-section spacing. */
+body.iv-split-mode #interview-view .iv-section-combined {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
 }
 
 body.iv-split-mode #interview-view .iv-section:not(.iv-section-combined) {
@@ -454,4 +465,10 @@ body.iv-split-mode #interview-view .iv-section:not(.iv-section-combined) {
 
 .iv-cb-lang-row .iv-select {
     min-width: 110px;
+}
+
+.iv-cb-answer-box[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    opacity: 0.55;
+    font-style: italic;
 }
