@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TranslatorInterviewAssistant",
+  "version": "0.6.0",
+  "identifier": "com.personal.translator.interview",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Translator + Interview Assistant",
+        "width": 720,
+        "height": 480,
+        "minWidth": 400,
+        "minHeight": 200,
+        "center": true,
+        "transparent": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": true,
+        "skipTaskbar": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ipc://localhost wss: https:; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../scripts/*": "scripts/"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "entitlements": "Entitlements.plist",
+      "frameworks": [],
+      "minimumSystemVersion": "13.0"
+    },
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1MkNFMzAxRUQ2QUY2OEMKUldTTTltcnRBZU1zUmJrb1VIaExodVBLb2JnSjlmL25neWttRlI4clYzSlhPMG1Vd2RDS2ZkNkwK",
+      "endpoints": [
+        "https://github.com/phuc-nt/my-translator/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

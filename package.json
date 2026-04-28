@@ -1,0 +1,19 @@
+{
+  "name": "translator-realtime-interview-assistant",
+  "private": true,
+  "version": "0.6.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "node tests/interview-smoke-test.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.0"
+  }
+}

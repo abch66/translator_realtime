@@ -1,0 +1,268 @@
+/* =========================================================================
+ * Interview Assistant — UI styles
+ * Scoped to .iv-* classes to avoid touching the original translator styles.
+ * ========================================================================= */
+
+/* The base .view + .view.active rules from main.css handle show/hide.
+ * We only add interview-specific look + feel here. */
+#interview-view {
+    overflow: hidden;
+    background: var(--bg, #1c1f24);
+    color: var(--fg, #f5f5f5);
+}
+
+.iv-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.25);
+}
+
+.iv-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.2px;
+}
+
+.iv-disclaimer {
+    background: rgba(255, 200, 0, 0.08);
+    border-left: 3px solid #f5b400;
+    color: #f5d97a;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.iv-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 14px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.iv-section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.iv-section-title {
+    margin: 0 0 4px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9aa4af;
+    font-weight: 600;
+}
+
+.iv-section textarea,
+.iv-section input[type="text"],
+.iv-section input[type="number"],
+.iv-section input[type="search"],
+.iv-section select {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    resize: vertical;
+}
+
+.iv-section textarea:focus,
+.iv-section input:focus,
+.iv-section select:focus {
+    outline: none;
+    border-color: #4d8df9;
+    box-shadow: 0 0 0 2px rgba(77, 141, 249, 0.25);
+}
+
+.iv-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.iv-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+}
+
+.iv-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #9aa4af;
+}
+
+.iv-field-wide { grid-column: 1 / -1; }
+
+.iv-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #c8ced6;
+}
+
+.iv-status {
+    margin-left: auto;
+    font-size: 11px;
+    color: #9aa4af;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 3px 8px;
+    border-radius: 999px;
+}
+
+.iv-status[data-status="question-detected"] { color: #6ee7a8; }
+.iv-status[data-status="duplicate-suppressed"] { color: #d6a96b; }
+.iv-status[data-status="no-question-detected"] { color: #c8ced6; }
+.iv-status[data-status="waiting-for-complete-question"] { color: #6db4f5; }
+
+.iv-meta-line { font-size: 12px; color: #c8ced6; }
+.iv-meta-label { color: #9aa4af; margin-right: 4px; }
+
+.iv-translation-box {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 36px;
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+
+.iv-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: inherit;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.iv-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.iv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.iv-btn-primary {
+    background: #4d8df9;
+    border-color: #4d8df9;
+    color: white;
+}
+.iv-btn-primary:hover { background: #3a7be0; }
+
+.iv-btn-secondary { background: transparent; }
+
+.iv-danger {
+    color: #ff6b6b;
+    border-color: rgba(255, 107, 107, 0.4);
+}
+.iv-danger:hover { background: rgba(255, 107, 107, 0.12); }
+
+.iv-search { flex: 1 1 auto; min-width: 180px; }
+
+.iv-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.iv-history-empty {
+    font-size: 12px;
+    color: #9aa4af;
+    padding: 8px 4px;
+}
+
+.iv-history-item {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.iv-history-meta {
+    display: flex;
+    gap: 8px;
+    color: #9aa4af;
+    font-size: 11px;
+}
+
+.iv-history-question { line-height: 1.4; }
+.iv-history-answer { line-height: 1.4; color: #c8ced6; }
+
+.iv-history-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.iv-mini-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: inherit;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.iv-mini-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.iv-mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.iv-toast {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(20, 22, 26, 0.95);
+    color: #f5f5f5;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+    z-index: 1000;
+}
+.iv-toast.show { opacity: 1; transform: translateY(0); }
+
+/* Settings — Interview tab additions */
+.settings-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.iv-warning-box {
+    background: rgba(245, 180, 0, 0.06);
+    border-left: 3px solid #f5b400;
+}
+
+@media (max-width: 600px) {
+    .iv-grid { grid-template-columns: 1fr; }
+}

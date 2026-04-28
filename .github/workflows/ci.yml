@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  smoke:
+    name: Interview module smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Syntax check JS modules
+        run: |
+          set -euo pipefail
+          for f in $(git ls-files 'src/js/**/*.js' 'src/js/*.js'); do
+            node --check "$f"
+          done
+      - name: Run interview smoke tests
+        run: npm test
