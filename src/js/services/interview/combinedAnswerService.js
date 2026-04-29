@@ -58,17 +58,23 @@ function buildLegacyUserPrompt({ question, detectedLanguage, vietnameseTranslati
 
 /**
  * Context-aware system prompt — the Combined Mode flagship prompt. Tells
- * GPT it is receiving real-time translator data and must reason over the
- * full conversation, not only the latest sentence.
+ * GPT it is receiving real-time translator data, must reason over the
+ * recent context, and must reply with **only** the suggested answer
+ * text — no analysis, no labels, no markdown.
  */
 function buildContextSystemPrompt() {
     return [
         'You are an interview assistant. You receive real-time transcript and Vietnamese',
-        'translation from a translator panel. Your job is to understand the full context,',
-        'detect the actual interview question or implied question, and suggest a natural,',
-        'honest, easy-to-speak answer. Use the full context, not only the latest sentence.',
-        'Do not invent fake experience. Do not help with cheating, impersonation, or',
-        'bypassing interview rules.',
+        'translation from a translator panel. Your job is to understand the recent',
+        'conversation context (the last few exchanges), detect the actual interview',
+        'question or implied question, and reply with ONE natural, honest, easy-to-speak',
+        'answer in the target language. Reply with the answer text only — no analysis,',
+        'no question explanation, no Vietnamese meaning unless the target language is',
+        'Vietnamese, no "useful phrases" section, no markdown headings, no section',
+        'labels (no "A.", "Suggested answer:", "Antwort:", etc.). Do not invent fake',
+        'experience. Do not help with cheating, impersonation, or bypassing interview',
+        'rules. If there is not enough information to answer, give a safe, generic,',
+        'honest answer in the target language.',
     ].join(' ');
 }
 
@@ -77,34 +83,48 @@ function placeholder(value) {
     return v || '(none)';
 }
 
-function formatRecentSegments(recent = []) {
+const MAX_RECENT_SEGMENTS = 8;
+const MAX_CONTEXT_CHARS_LOCAL = 1500;
+
+/**
+ * Pick the last `n` recent segments from the snapshot and render them as
+ * lines. Each line carries the original + Vietnamese translation when
+ * available. The combined output is hard-capped at `MAX_CONTEXT_CHARS`
+ * characters so we never blow past the GPT context window or balloon
+ * cost on a long session.
+ */
+function formatRecentSegments(recent = [], limit = MAX_RECENT_SEGMENTS) {
     if (!recent.length) return '(none)';
-    return recent
-        .map((s, i) => {
-            const idx = recent.length - i; // 1 = oldest in window, len = newest
-            const tr = s.translation ? ` → ${s.translation}` : '';
-            return `[${idx}] ${s.text}${tr}`;
-        })
-        .join('\n');
+    const sliced = recent.slice(-limit);
+    const lines = [];
+    let total = 0;
+    for (let i = sliced.length - 1; i >= 0; i--) {
+        const s = sliced[i];
+        const tr = s.translation ? ` → ${s.translation}` : '';
+        const line = `- ${s.text}${tr}`;
+        if (total + line.length > MAX_CONTEXT_CHARS_LOCAL) break;
+        lines.unshift(line);
+        total += line.length + 1;
+    }
+    return lines.length ? lines.join('\n') : '(none)';
 }
 
 /**
- * Render the user-prompt template described in the spec. `ctx` should
- * already be a snapshot of the translator context. `meta` carries the
- * Interview Assistant's per-call settings.
+ * Render the user-prompt template. `ctx` should already be a snapshot of
+ * the translator context. `meta` carries the Interview Assistant's
+ * per-call settings (Section C/D selectors).
+ *
+ * Per the latest spec we deliberately do NOT send fullTranscript /
+ * fullVietnameseTranslation — only the last 8 recent segments capped at
+ * 1500 characters. This keeps cost bounded and the model focused on the
+ * current exchange instead of regurgitating the whole conversation.
  */
 function buildContextUserPrompt({ ctx, meta, question }) {
     const lines = [];
     lines.push('Source language:');
     lines.push(placeholder(ctx.sourceLanguage));
     lines.push('');
-    lines.push('Full transcript so far:');
-    lines.push(placeholder(ctx.fullTranscript));
-    lines.push('');
-    lines.push('Full Vietnamese translation so far:');
-    lines.push(placeholder(ctx.fullVietnameseTranslation));
-    lines.push('');
-    lines.push('Recent transcript segments:');
+    lines.push('Recent transcript segments (most recent last, original → Vietnamese):');
     lines.push(formatRecentSegments(ctx.recentSegments));
     lines.push('');
     lines.push('Latest transcript segment:');
@@ -113,7 +133,7 @@ function buildContextUserPrompt({ ctx, meta, question }) {
     lines.push('Latest Vietnamese translation:');
     lines.push(placeholder(ctx.latestVietnameseSegment));
     lines.push('');
-    lines.push('Detected question, if any:');
+    lines.push('Detected question or implied question:');
     lines.push(placeholder(question || ctx.detectedQuestion?.text));
     lines.push('');
     lines.push('User background/context:');
@@ -135,34 +155,13 @@ function buildContextUserPrompt({ ctx, meta, question }) {
     lines.push(placeholder(meta.answerStyle));
     lines.push('');
     lines.push('Task:');
-    lines.push('1. Analyze the full conversation context.');
-    lines.push('2. Identify the actual question or implied question the user needs to answer.');
-    lines.push('3. Explain the question in Vietnamese.');
-    lines.push('4. Explain what the interviewer wants to know.');
-    lines.push('5. Suggest a natural answer in the target language.');
-    lines.push('6. Keep the answer suitable for the selected language level.');
-    lines.push('7. If the target language is not Vietnamese, provide Vietnamese meaning.');
-    lines.push('8. Add useful phrases if the target language is English or German.');
-    lines.push('9. If there is not enough information to answer, ask for the missing information or provide a safe general answer.');
-    lines.push('');
-    lines.push('Output format:');
-    lines.push('A. Context summary in Vietnamese:');
-    lines.push('...');
-    lines.push('');
-    lines.push('B. Detected or implied question:');
-    lines.push('...');
-    lines.push('');
-    lines.push('C. What the interviewer wants to know:');
-    lines.push('...');
-    lines.push('');
-    lines.push('D. Suggested answer:');
-    lines.push('...');
-    lines.push('');
-    lines.push('E. Vietnamese meaning:');
-    lines.push('...');
-    lines.push('');
-    lines.push('F. Useful phrases:');
-    lines.push('...');
+    lines.push('Reply with ONLY the suggested answer text in the target answer language');
+    lines.push('above, at the requested language level and length. Do NOT include any');
+    lines.push('analysis, context summary, question explanation, Vietnamese meaning,');
+    lines.push('"useful phrases" block, alternative versions, markdown headings, or');
+    lines.push('section labels (no "A.", "Suggested answer:", "Antwort:", etc.). Just');
+    lines.push('the answer, ready to speak. Keep it natural, honest, and easy to');
+    lines.push('pronounce. If the target language is Vietnamese, reply in Vietnamese only.');
     return lines.join('\n');
 }
 

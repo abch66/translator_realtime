@@ -79,7 +79,10 @@ const prompt = buildInterviewPrompt({
 });
 ok('prompt contains SYSTEM', prompt.includes('SYSTEM / ROLE'));
 ok('prompt contains question', prompt.includes('Tell me about yourself'));
-ok('prompt contains output format', prompt.includes('OUTPUT FORMAT'));
+ok('prompt asks for answer-only (no A-F output)',
+    /Reply with ONLY the suggested answer text/i.test(prompt)
+    && !prompt.includes('OUTPUT FORMAT')
+    && !/A\.\s*Meaning of the question/.test(prompt));
 ok('prompt contains anti-cheat clause', prompt.includes('Do not help with deception'));
 
 console.log('# secretUtils');
@@ -155,7 +158,7 @@ const big = 'a '.repeat(10000); // ~20000 chars
 translatorContextStore.pushOriginal(big.trim(), 'en');
 const cappedSnap = translatorContextStore.get();
 ok('store caps fullTranscript length',
-    cappedSnap.fullTranscript.length <= 8000);
+    cappedSnap.fullTranscript.length <= 1500);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

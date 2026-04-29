@@ -265,16 +265,25 @@ console.log('# Context-aware Combined Mode prompt');
     ok('context call returned answer', !!ans && typeof ans.answer === 'string');
     ok('context call recorded promptMode=context', ans.promptMode === 'context');
     const userMsg = _lastFetchBody?.messages?.find((m) => m.role === 'user')?.content || '';
-    ok('user prompt has Full transcript section', /Full transcript so far:/.test(userMsg));
-    ok('user prompt has Recent transcript segments section', /Recent transcript segments:/.test(userMsg));
-    ok('user prompt has Detected question line', /Detected question, if any:/.test(userMsg));
-    ok('user prompt has Output format A-F', /A\.\s*Context summary[\s\S]*F\.\s*Useful phrases/.test(userMsg));
-    ok('user prompt embeds full transcript text', userMsg.includes('Erzählen Sie etwas über sich.'));
+    ok('user prompt does NOT include fullTranscript dump',
+        !/Full transcript so far:/.test(userMsg)
+        && !/Full Vietnamese translation so far:/.test(userMsg));
+    ok('user prompt has Recent transcript segments section', /Recent transcript segments/.test(userMsg));
+    ok('user prompt has Detected question line', /Detected question or implied question:/.test(userMsg));
+    ok('user prompt does NOT request A–F output sections',
+        !/A\.\s*Context summary/.test(userMsg) && !/F\.\s*Useful phrases/.test(userMsg));
+    ok('user prompt asks for ONLY suggested answer text',
+        /Reply with ONLY the suggested answer text/i.test(userMsg));
     ok('user prompt embeds Vietnamese translation', userMsg.includes('Hãy giới thiệu về bạn'));
     ok('user prompt embeds source language', /Source language:\s*\nde/.test(userMsg));
+    ok('user prompt is bounded in size (≈ recent + meta only)',
+        userMsg.length < 4000, `userMsg.length=${userMsg.length}`);
     const sysMsg = _lastFetchBody?.messages?.find((m) => m.role === 'system')?.content || '';
     ok('system prompt has anti-cheating clause', /Do not invent fake experience/.test(sysMsg));
-    ok('system prompt mentions full context', /full context/i.test(sysMsg));
+    ok('system prompt forbids A./Suggested answer: labels',
+        /no\s+section\s+labels/i.test(sysMsg));
+    ok('system prompt forbids markdown headings',
+        /no markdown headings/i.test(sysMsg));
 }
 
 console.log('# Combined Mode legacy path (no translatorContext)');
@@ -370,8 +379,10 @@ const prompt = buildInterviewPrompt({
 ok('prompt embeds question', prompt.includes('Why do you want this job?'));
 ok('prompt embeds userContext', prompt.includes('DevOps'));
 ok('prompt has anti-cheat clause', prompt.includes('Do not help with deception'));
-ok('prompt has output sections A-F',
-    /A\..+?B\..+?C\..+?D\..+?E\..+?F\./s.test(prompt));
+ok('prompt asks for ONLY answer text (no A-F output)',
+    /Reply with ONLY the suggested answer text/i.test(prompt)
+    && !/A\.\s*Meaning of the question/.test(prompt)
+    && !/F\.\s*Useful phrases/.test(prompt));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

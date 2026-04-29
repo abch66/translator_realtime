@@ -20,8 +20,10 @@
  */
 
 const MAX_SEGMENTS = 80; // ring buffer per channel (originals / translations)
-const RECENT_SEGMENT_COUNT = 6;
-export const MAX_TRANSCRIPT_CHARS = 8000; // cap fed to GPT
+export const RECENT_SEGMENT_COUNT = 8; // how many recent segments to expose
+export const MAX_CONTEXT_CHARS = 1500; // cap on what we ship to GPT
+// Legacy alias kept so we don't break callers that imported the old name.
+export const MAX_TRANSCRIPT_CHARS = MAX_CONTEXT_CHARS;
 
 function nowTs() {
     return Date.now();
@@ -32,7 +34,7 @@ function joinSegments(segments) {
     return segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim();
 }
 
-function tailWithLimit(text, limit = MAX_TRANSCRIPT_CHARS) {
+function tailWithLimit(text, limit = MAX_CONTEXT_CHARS) {
     if (!text) return '';
     if (text.length <= limit) return text;
     // Keep the suffix — that's the most recent context. Trim to the next
