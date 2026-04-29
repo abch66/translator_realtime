@@ -23,6 +23,7 @@ import { DuplicateQuestionGuard } from '../../services/interview/duplicateQuesti
 import { interviewHistoryService } from '../../services/interview/interviewHistoryService.js';
 import { CombinedAnswerService } from '../../services/interview/combinedAnswerService.js';
 import { interviewSettingsStorage } from '../../storage/interviewSettingsStorage.js';
+import { translatorContextStore } from '../../storage/translatorContextStore.js';
 import { detectLanguage, languageLabel } from '../../utils/languageUtils.js';
 import { maskApiKey } from '../../utils/secretUtils.js';
 
@@ -275,6 +276,7 @@ export class InterviewAssistantPanel {
         }
         this.guard.remember(text);
         this._lastDetectedQuestion = { text, language };
+        translatorContextStore.setDetectedQuestion(text, language);
 
         // Push into the input field but never overwrite an in-progress edit.
         const input = $('iv-question-input');
@@ -301,6 +303,9 @@ export class InterviewAssistantPanel {
                 text,
                 language: languageLabel(language),
                 vietnameseTranslation: language === 'vi' ? text : '',
+                translatorContext: settings.useTranslatorContext !== false
+                    ? translatorContextStore.get()
+                    : null,
             });
         }
         this._refreshModePills();
@@ -714,13 +719,31 @@ export class InterviewAssistantPanel {
         this._setCombinedStatus('loading');
 
         const lang = detectLanguage(question);
+        // Pull the live translator context (if enabled) so the GPT prompt
+        // can reason over the full conversation, not only this question.
+        const ctx = settings.useTranslatorContext !== false
+            ? translatorContextStore.get()
+            : null;
+        // Per-call meta from the panel's Section C/D selectors so the
+        // user's chosen target language / level / style overrides the
+        // persisted ivContext defaults for this single answer.
+        const meta = {
+            userContext: $('iv-user-context')?.value || '',
+            interviewType: $('iv-interview-type')?.value || '',
+            targetLanguage: $('iv-cb-target-language')?.value || $('iv-target-language')?.value || '',
+            answerLength: $('iv-answer-length')?.value || '',
+            answerStyle: $('iv-answer-style')?.value || '',
+            languageLevel: $('iv-cb-language-level')?.value || $('iv-language-level')?.value || '',
+        };
         try {
             await this.combined.generate({
+                translatorContext: ctx,
                 originalTranscript: question,
                 vietnameseTranslation: lang === 'vi' ? question : '',
                 detectedLanguage: languageLabel(lang),
                 style,
                 force,
+                ...meta,
             });
         } catch (e) {
             // already handled by onError listener

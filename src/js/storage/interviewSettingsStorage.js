@@ -43,6 +43,13 @@ export const DEFAULT_INTERVIEW_SETTINGS = {
     gptMaxTokens: 320, // cap output ~3-6 sentences (180-320 fits A2-B1 German)
     combinedAutoCall: true, // call GPT automatically when a question is detected
     combinedStreaming: true, // stream tokens to render answer as it arrives
+    // When ON (default), Combined Mode feeds GPT the full live translator
+    // context (transcript + Vietnamese translation + recent segments +
+    // detected question) instead of just the bare detected question. This
+    // is the spec'd behavior and produces context-aware A–F answers. The
+    // user can flip it OFF in Settings → Interview to fall back to the
+    // legacy single-question prompt.
+    useTranslatorContext: true,
 
     // Interview-context defaults aligned with the Ausbildung use-case from the spec.
     ivContext: {

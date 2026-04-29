@@ -13,6 +13,7 @@ import { audioPlayer } from './audio-player.js';
 import { updater } from './updater.js';
 import { InterviewAssistantPanel } from './components/interview/InterviewAssistantPanel.js';
 import { interviewSettingsStorage } from './storage/interviewSettingsStorage.js';
+import { translatorContextStore } from './storage/translatorContextStore.js';
 
 const { invoke } = window.__TAURI__.core;
 const { getCurrentWindow } = window.__TAURI__.window;
@@ -101,7 +102,10 @@ class App {
             this.interviewPanel.refreshTranslatorMode(!!this.isRunning);
             this.interviewPanel.refreshGptKeyMask();
 
-            // Forward transcript updates so auto-detect can run.
+            // Forward transcript updates so auto-detect can run AND so the
+            // shared translatorContextStore stays current. Combined Mode
+            // reads from that store instead of receiving only the bare
+            // detected question.
             this.transcriptUI.onTextUpdate(({ kind, text, language }) => {
                 if (!text) return;
                 // Mirror live transcript into the split-view translator panel.
@@ -109,6 +113,11 @@ class App {
                 // Only feed finalized originals + translations to the detector;
                 // provisional text changes too rapidly and is debounced upstream.
                 if (kind === 'provisional') return;
+                if (kind === 'original') {
+                    translatorContextStore.pushOriginal(text, language || '');
+                } else if (kind === 'translation') {
+                    translatorContextStore.pushTranslation(text);
+                }
                 const fullText = this.transcriptUI.getPlainText();
                 this.interviewPanel.pushTranscript(fullText);
             });
@@ -169,6 +178,8 @@ class App {
             setVal('iv-set-gpt-min-words', s.gptMinWords);
             const autoCallEl = document.getElementById('iv-set-combined-auto-call');
             if (autoCallEl) autoCallEl.checked = !!s.combinedAutoCall;
+            const useCtxEl = document.getElementById('iv-set-use-translator-ctx');
+            if (useCtxEl) useCtxEl.checked = s.useTranslatorContext !== false;
 
             // Interview Context
             const ctx = s.ivContext || {};
@@ -225,6 +236,7 @@ class App {
         bindStr('iv-set-gpt-model', 'gptModel');
         bindNum('iv-set-gpt-min-words', 'gptMinWords');
         bindBool('iv-set-combined-auto-call', 'combinedAutoCall');
+        bindBool('iv-set-use-translator-ctx', 'useTranslatorContext');
 
         // Toggle show/hide for the GPT key field.
         document.getElementById('iv-btn-toggle-gpt-key')?.addEventListener('click', () => {
@@ -1159,6 +1171,7 @@ class App {
 
         this.isRunning = true;
         this._updateStartButton();
+        translatorContextStore.setListening(true);
         if (!this.recordingStartTime) this.recordingStartTime = Date.now();
 
         // Record session metadata for auto-save
@@ -1173,6 +1186,8 @@ class App {
                 this.sessionSourceLang = settings.source_language || 'auto';
                 this.sessionTargetLang = settings.target_language || 'vi';
             }
+            translatorContextStore.setSourceLanguage(this.sessionSourceLang);
+            translatorContextStore.setTargetLanguage(this.sessionTargetLang);
         }
 
         // Clear transcript only if nothing is showing
@@ -1504,6 +1519,7 @@ class App {
     async stop() {
         this.isRunning = false;
         this._updateStartButton();
+        translatorContextStore.setListening(false);
 
         // Stop audio capture
         try {
@@ -1544,6 +1560,9 @@ class App {
 
         // Reset session tracking
         this.sessionStartTime = null;
+        // Drop the live translator context so the next session doesn't
+        // bleed previous transcript / translation into the GPT prompt.
+        translatorContextStore.reset();
     }
 
     _updateStartButton() {

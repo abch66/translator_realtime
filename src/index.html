@@ -705,6 +705,12 @@
             <span>Auto-call GPT on detected question</span>
           </label>
 
+          <label class="settings-toggle">
+            <input type="checkbox" id="iv-set-use-translator-ctx" />
+            <span>Use full Translator context (recommended)</span>
+          </label>
+          <p class="hint">When ON, Combined Mode sends the live transcript, Vietnamese translation, recent segments and detected question to GPT so the answer is context-aware. Turn OFF to send only the bare detected question.</p>
+
           <span class="field-label">Minimum words before calling GPT</span>
           <input type="number" id="iv-set-gpt-min-words" min="1" max="50" step="1" />
         </div>

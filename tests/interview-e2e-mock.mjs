@@ -217,6 +217,95 @@ console.log('# Cancel in-flight request when a fresher question arrives');
     ok('second request returned an answer', !!a2 && typeof a2.answer === 'string');
 }
 
+console.log('# Context-aware Combined Mode prompt');
+{
+    // Re-arm a JSON fetch stub like the non-streaming path.
+    _fetchCallCount = 0;
+    _lastFetchUrl = null; _lastFetchAuth = null; _lastFetchBody = null;
+    globalThis.fetch = async (url, opts) => {
+        _fetchCallCount++;
+        _lastFetchUrl = url;
+        _lastFetchAuth = opts?.headers?.Authorization || opts?.headers?.authorization;
+        try { _lastFetchBody = JSON.parse(opts.body); } catch { _lastFetchBody = null; }
+        return jsonResponse('A. Tóm tắt: ...\nB. Câu hỏi: ...\nC. ...\nD. ...\nE. ...\nF. ...');
+    };
+    const cbCtx = new CombinedAnswerService({
+        getSettings: () => ({
+            ...interviewSettingsStorage.get(),
+            gptApiKey: 'sk-test-ctx',
+            useTranslatorContext: true,
+        }),
+        onStatus: () => {}, onAnswer: () => {}, onError: () => {},
+    });
+    const ctx = {
+        sourceLanguage: 'de',
+        targetLanguage: 'vi',
+        fullTranscript: 'Hallo, schön Sie zu sehen. Erzählen Sie etwas über sich.',
+        fullVietnameseTranslation: 'Xin chào, rất vui được gặp bạn. Hãy giới thiệu về bạn.',
+        latestTranscriptSegment: 'Erzählen Sie etwas über sich.',
+        latestVietnameseSegment: 'Hãy giới thiệu về bạn.',
+        recentSegments: [
+            { text: 'Hallo, schön Sie zu sehen.', translation: 'Xin chào, rất vui được gặp bạn.', language: 'de' },
+            { text: 'Erzählen Sie etwas über sich.', translation: 'Hãy giới thiệu về bạn.', language: 'de' },
+        ],
+        detectedQuestion: { text: 'Erzählen Sie etwas über sich?', language: 'de' },
+        timestamps: {}, isListening: true, lastUpdatedAt: Date.now(),
+    };
+    const ans = await cbCtx.generate({
+        translatorContext: ctx,
+        originalTranscript: 'Erzählen Sie etwas über sich?',
+        detectedLanguage: 'German',
+        userContext: 'Học sinh Ausbildung',
+        interviewType: 'Ausbildungsbewerbung',
+        targetLanguage: 'Deutsch',
+        answerLength: 'Medium',
+        answerStyle: 'Natural',
+        languageLevel: 'A2-B1',
+    });
+    ok('context call returned answer', !!ans && typeof ans.answer === 'string');
+    ok('context call recorded promptMode=context', ans.promptMode === 'context');
+    const userMsg = _lastFetchBody?.messages?.find((m) => m.role === 'user')?.content || '';
+    ok('user prompt has Full transcript section', /Full transcript so far:/.test(userMsg));
+    ok('user prompt has Recent transcript segments section', /Recent transcript segments:/.test(userMsg));
+    ok('user prompt has Detected question line', /Detected question, if any:/.test(userMsg));
+    ok('user prompt has Output format A-F', /A\.\s*Context summary[\s\S]*F\.\s*Useful phrases/.test(userMsg));
+    ok('user prompt embeds full transcript text', userMsg.includes('Erzählen Sie etwas über sich.'));
+    ok('user prompt embeds Vietnamese translation', userMsg.includes('Hãy giới thiệu về bạn'));
+    ok('user prompt embeds source language', /Source language:\s*\nde/.test(userMsg));
+    const sysMsg = _lastFetchBody?.messages?.find((m) => m.role === 'system')?.content || '';
+    ok('system prompt has anti-cheating clause', /Do not invent fake experience/.test(sysMsg));
+    ok('system prompt mentions full context', /full context/i.test(sysMsg));
+}
+
+console.log('# Combined Mode legacy path (no translatorContext)');
+{
+    _fetchCallCount = 0;
+    _lastFetchBody = null;
+    globalThis.fetch = async (url, opts) => {
+        _fetchCallCount++;
+        try { _lastFetchBody = JSON.parse(opts.body); } catch { _lastFetchBody = null; }
+        return jsonResponse('Bare answer.');
+    };
+    const cbLegacy = new CombinedAnswerService({
+        getSettings: () => ({
+            ...interviewSettingsStorage.get(),
+            gptApiKey: 'sk-test-legacy',
+            useTranslatorContext: false,
+        }),
+        onStatus: () => {}, onAnswer: () => {}, onError: () => {},
+    });
+    const ans = await cbLegacy.generate({
+        originalTranscript: 'Why do you want this job and what makes you qualified?',
+        detectedLanguage: 'English',
+    });
+    ok('legacy call returned answer', !!ans && ans.promptMode === 'legacy');
+    const userMsg = _lastFetchBody?.messages?.find((m) => m.role === 'user')?.content || '';
+    ok('legacy prompt does NOT include Full transcript section',
+        !/Full transcript so far:/.test(userMsg));
+    ok('legacy prompt has bare Question: line',
+        /Question: Why do you want this job/.test(userMsg));
+}
+
 console.log('# Missing key error path');
 interviewSettingsStorage.update({ gptApiKey: '' });
 const cb2 = new CombinedAnswerService({

@@ -118,5 +118,44 @@ ok('missing-key error code', missingKeyErr?.code === 'missing-key');
 ok('combined service has cache primitives',
     typeof cb.regenerate === 'function' && typeof cb.clearCache === 'function');
 
+console.log('# translatorContextStore');
+const { translatorContextStore } = await import('../src/js/storage/translatorContextStore.js');
+translatorContextStore.reset();
+ok('empty store has no context', translatorContextStore.hasContext() === false);
+translatorContextStore.setSourceLanguage('de');
+translatorContextStore.setTargetLanguage('vi');
+translatorContextStore.pushOriginal('Hallo, wie geht es dir?', 'de');
+translatorContextStore.pushTranslation('Xin chào, bạn khỏe không?');
+translatorContextStore.pushOriginal('Erzählen Sie etwas über sich.', 'de');
+translatorContextStore.pushTranslation('Hãy giới thiệu về bản thân bạn.');
+translatorContextStore.setDetectedQuestion('Erzählen Sie etwas über sich?', 'de');
+const snap = translatorContextStore.get();
+ok('store tracks sourceLanguage', snap.sourceLanguage === 'de');
+ok('store tracks targetLanguage', snap.targetLanguage === 'vi');
+ok('store concatenates fullTranscript',
+    snap.fullTranscript.includes('Hallo') && snap.fullTranscript.includes('Erzählen Sie'));
+ok('store concatenates fullVietnameseTranslation',
+    snap.fullVietnameseTranslation.includes('Xin chào')
+    && snap.fullVietnameseTranslation.includes('giới thiệu'));
+ok('store exposes latestTranscriptSegment',
+    snap.latestTranscriptSegment === 'Erzählen Sie etwas über sich.');
+ok('store exposes latestVietnameseSegment',
+    snap.latestVietnameseSegment === 'Hãy giới thiệu về bản thân bạn.');
+ok('store exposes detectedQuestion',
+    snap.detectedQuestion?.text === 'Erzählen Sie etwas über sich?');
+ok('store recentSegments has both originals and translations',
+    snap.recentSegments.length === 2
+    && snap.recentSegments[0].text === 'Hallo, wie geht es dir?'
+    && snap.recentSegments[1].translation === 'Hãy giới thiệu về bản thân bạn.');
+ok('store hasContext after pushes', translatorContextStore.hasContext() === true);
+
+// Cap behavior: a huge transcript should be tail-trimmed.
+translatorContextStore.reset();
+const big = 'a '.repeat(10000); // ~20000 chars
+translatorContextStore.pushOriginal(big.trim(), 'en');
+const cappedSnap = translatorContextStore.get();
+ok('store caps fullTranscript length',
+    cappedSnap.fullTranscript.length <= 8000);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
