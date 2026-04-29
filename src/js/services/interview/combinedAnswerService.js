@@ -82,10 +82,11 @@ export class CombinedAnswerService {
             return null;
         }
 
+        const styleHint = ALLOWED_STYLES.has(style) ? style : 'natural';
         const fp = fingerprint(question);
         const norm = normalizeText(question);
         if (!force) {
-            const cached = this._cacheLookup(fp, norm, settings.duplicateThreshold || 0.85);
+            const cached = this._cacheLookup(fp, norm, settings.duplicateThreshold || 0.85, styleHint);
             if (cached) {
                 this.lastQuestion = question;
                 this.lastResult = cached.answer;
@@ -101,7 +102,6 @@ export class CombinedAnswerService {
             this._inflight = null;
         }
 
-        const styleHint = ALLOWED_STYLES.has(style) ? style : 'natural';
         const ctx = settings.ivContext || {};
         const systemPrompt = buildSystemPrompt({
             targetLanguage: ctx.targetLanguage,
@@ -171,10 +171,11 @@ export class CombinedAnswerService {
             question,
             answer: cleaned,
             language: detectedLanguage || '',
+            style: styleHint,
             createdAt: Date.now(),
             fromCache: false,
         };
-        this._cachePut(fp, norm, answer);
+        this._cachePut(fp, norm, answer, styleHint);
         this.lastQuestion = question;
         this.lastResult = answer;
         this.onAnswer(answer);
@@ -218,16 +219,17 @@ export class CombinedAnswerService {
         this.lastResult = null;
     }
 
-    _cacheLookup(fp, norm, threshold) {
+    _cacheLookup(fp, norm, threshold, style = 'natural') {
         for (const entry of this._cache) {
+            if (entry.style !== style) continue;
             if (entry.fp === fp) return entry;
             if (isSimilar(entry.normalized, norm, threshold)) return entry;
         }
         return null;
     }
 
-    _cachePut(fp, norm, answer) {
-        this._cache.unshift({ fp, normalized: norm, answer });
+    _cachePut(fp, norm, answer, style = 'natural') {
+        this._cache.unshift({ fp, normalized: norm, style, answer });
         while (this._cache.length > this.cacheSize) this._cache.pop();
     }
 }

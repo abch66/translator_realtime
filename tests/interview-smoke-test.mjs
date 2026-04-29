@@ -84,7 +84,7 @@ ok('prompt contains anti-cheat clause', prompt.includes('Do not help with decept
 
 console.log('# secretUtils');
 ok('mask short key', maskApiKey('sk-1234') === '****');
-ok('mask long key shows head/tail', maskApiKey('sk-abcdefghij1234') === 'sk--****1234');
+ok('mask long key shows head/tail', maskApiKey('sk-abcdefghij1234') === 'sk-****1234');
 ok('empty -> empty', maskApiKey('') === '' && maskApiKey(null) === '');
 
 console.log('# gptClient.parseJsonFromCompletion');

@@ -278,17 +278,23 @@ export class InterviewAssistantPanel {
 
         // Push into the input field but never overwrite an in-progress edit.
         const input = $('iv-question-input');
+        const settings = interviewSettingsStorage.get();
+        const willUseCombined = settings.combinedMode && settings.combinedAutoCall && this.isTranslatorRunning();
         if (input && (!input.value.trim() || input.dataset.autofilled === '1')) {
             input.value = text;
             input.dataset.autofilled = '1';
             this._refreshQuestionMetadata();
-            // Auto-build a prompt for the user to copy.
-            this._generatePrompt({ silent: true });
+            // Auto-build a manual prompt only if the user is NOT also getting
+            // a Combined-Mode GPT answer for this question — otherwise every
+            // detected question pollutes Interview History with an unused
+            // manual prompt the user never reviewed.
+            if (!willUseCombined) {
+                this._generatePrompt({ silent: true });
+            }
         }
 
         // Combined Mode auto-call (only when translator is running + setting on).
-        const settings = interviewSettingsStorage.get();
-        if (settings.combinedMode && settings.combinedAutoCall && this.isTranslatorRunning()) {
+        if (willUseCombined) {
             this._lastCombinedQuestion = { text, language };
             this._setText('iv-cb-question', text);
             this.combined.onDetectedQuestion({
@@ -622,6 +628,32 @@ export class InterviewAssistantPanel {
         if (box) box.textContent = answer.answer || '';
         const err = $('iv-cb-error');
         if (err) err.style.display = 'none';
+
+        // Persist Combined-Mode answers so they survive an app restart. Only
+        // record fresh answers (cache hits + replays would otherwise create
+        // duplicate history rows for the same question).
+        if (answer.fromCache) return;
+        const settings = interviewSettingsStorage.get();
+        if (!settings.savePromptsToHistory) return;
+        const lang = answer.language || (this._lastCombinedQuestion?.language || '');
+        try {
+            interviewHistoryService.recordPrompt({
+                mode: 'combined',
+                originalQuestion: answer.question || '',
+                sourceLanguage: typeof lang === 'string' ? lang : languageLabel(lang),
+                vietnameseTranslation:
+                    (typeof lang === 'string' && lang.toLowerCase().startsWith('viet')) ? answer.question : '',
+                generatedPrompt: '',
+                chatGptAnswer: answer.answer || '',
+                targetLanguage: settings.ivContext?.targetLanguage || '',
+                interviewType: '',
+                languageLevel: settings.ivContext?.languageLevel || '',
+                answerLength: '',
+                answerStyle: answer.style || 'natural',
+            });
+        } catch (e) {
+            console.warn('[interview] failed to record combined answer:', e);
+        }
     }
 
     _renderCombinedPartial(partial) {

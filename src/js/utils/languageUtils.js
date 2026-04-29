@@ -28,9 +28,9 @@ export const QUESTION_CUES = {
 
 const VI_DIACRITICS = /[ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ]/i;
 const DE_LETTERS = /[äöüß]/i;
-const COMMON_DE_WORDS = /\b(ich|sie|der|die|das|und|nicht|warum|wie|wann|wo|wer|was|welche|können|kannst|haben|sind|erzählen|für|über|mein|deine|deinen|sein|seine|sind|sind sie|sind sie\?|sehr|gut|sehr gut|bitte|danke|ja|nein|kein|keine|nicht|aber|auch)\b/i;
+const COMMON_DE_WORDS = /\b(ich|sie|der|die|das|und|nicht|warum|wie|wann|wo|wer|was|welche|können|kannst|haben|sind|erzählen|für|über|mein|deine|deinen|sein|seine|sehr|gut|bitte|danke|ja|nein|kein|keine|aber|auch)\b/i;
 const COMMON_EN_WORDS = /\b(the|and|you|your|are|is|do|did|have|has|can|could|why|how|what|when|where|who|tell|me|about|with|for|to|of|in|on|that|this|it)\b/i;
-const COMMON_VI_WORDS = /\b(bạn|tôi|của|và|là|có|không|được|cho|với|trong|đã|sẽ|sao|tại|vì|hãy|kể|giới|thiệu|gì|nào|đâu|ai|sao)\b/i;
+const COMMON_VI_WORDS = /\b(bạn|tôi|của|và|là|có|không|được|cho|với|trong|đã|sẽ|sao|tại|vì|hãy|kể|giới|thiệu|gì|nào|đâu|ai)\b/i;
 
 /**
  * Best-effort language detection for a short snippet.

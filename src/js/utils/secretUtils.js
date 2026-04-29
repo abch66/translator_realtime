@@ -8,9 +8,13 @@ export function maskApiKey(raw) {
     const trimmed = raw.trim();
     if (!trimmed) return '';
     if (trimmed.length <= 8) return '****';
+    // Preserve any existing prefix separator ("sk-", "AIza", "Bearer ", …)
+    // and avoid inserting an extra "-" — that previously turned "sk-XXX..."
+    // into "sk--****..." (double dash). Output format: `${head}****${tail}`,
+    // matching the spec example "sk-****abcd".
     const head = trimmed.slice(0, 3);
     const tail = trimmed.slice(-4);
-    return `${head}-****${tail}`;
+    return `${head}****${tail}`;
 }
 
 export function looksLikeKey(raw) {
